@@ -1,7 +1,7 @@
 # [SWT] 구현 노트
 
 - 계획: plan/SWT_plan_claude-sonnet-5-5.md
-- 구현 커밋: (커밋 후 기재) (리뷰 반영 커밋은 review/SWT_refine_*.md)
+- 구현 커밋: 2412b07 (리뷰 반영 커밋은 review/SWT_refine_*.md)
 
 ## 아키텍처
 | 파일 | 역할 |
