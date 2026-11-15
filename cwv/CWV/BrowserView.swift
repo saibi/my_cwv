@@ -23,9 +23,9 @@ struct BrowserView: View {
                     .simultaneousGesture(DragGesture(minimumDistance: 8)
                         .onChanged { drag = $0.translation }
                         .onEnded { v in
-                            // 놓은 위치(버튼 중심)에서 가장 가까운 모서리로 스냅한다.
+                            // 손을 뗀 속도까지 반영한 예상 도착 위치에서 가장 가까운 모서리로 붙인다 (튕기면 그 방향 모서리).
                             let c = center(corner, in: g.size)
-                            let p = CGPoint(x: c.x + v.translation.width, y: c.y + v.translation.height)
+                            let p = CGPoint(x: c.x + v.predictedEndTranslation.width, y: c.y + v.predictedEndTranslation.height)
                             withAnimation { corner = .nearest(to: p, in: g.size); drag = .zero }
                         })
             }
@@ -54,6 +54,9 @@ struct BrowserView: View {
             Button("A-  작게") { store.setZoom(site.id, site.zoom - 0.1) }
             Button("100%로") { store.setZoom(site.id, 1.0) }
             Text("현재 \(Int((site.zoom * 100).rounded()))%")
+            Button("Safari에서 열기") {
+                UIApplication.shared.open(safariTarget(current: WebCache.view(for: site).web.url, fallback: site.url))
+            }
             Divider()
             Button("목록으로", action: onClose)
         } label: {

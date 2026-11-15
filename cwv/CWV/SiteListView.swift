@@ -10,28 +10,38 @@ struct SiteListView: View {
     let onOpen: (Site) -> Void
     @State private var editing: EditTarget?
 
+    private func row(_ site: Site) -> some View {
+        Button { onOpen(site) } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(site.name).font(.headline)
+                Text(site.url.absoluteString).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .foregroundStyle(.primary)
+    }
+
     var body: some View {
         NavigationStack {
             List {
-                ForEach(store.sites) { site in
-                    Button { onOpen(site) } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(site.name).font(.headline)
-                            Text(site.url.absoluteString).font(.caption).foregroundStyle(.secondary)
+                Section {
+                    ForEach(store.defaultPages) { row($0) }  // 기본 사이트: 이동/삭제/편집 없음 (default_page.csv로 관리)
+                }
+                if !store.userSites.isEmpty {
+                    Section("추가한 사이트") {
+                        ForEach(store.userSites) { site in
+                            row(site)
+                                .swipeActions(edge: .trailing) {
+                                    Button("삭제", role: .destructive) {
+                                        if let i = store.userSites.firstIndex(of: site) { store.remove(at: [i]) }
+                                    }
+                                    Button("편집") { editing = EditTarget(existing: site) }.tint(.blue)
+                                }
                         }
-                    }
-                    .foregroundStyle(.primary)
-                    .swipeActions(edge: .trailing) {
-                        Button("삭제", role: .destructive) {
-                            if let i = store.sites.firstIndex(of: site) { store.remove(at: [i]) }
-                        }
-                        Button("편집") { editing = EditTarget(existing: site) }.tint(.blue)
+                        .onMove { store.userSites.move(fromOffsets: $0, toOffset: $1) }
+                        .onDelete { store.remove(at: $0) }
                     }
                 }
-                .onMove { store.sites.move(fromOffsets: $0, toOffset: $1) }
-                .onDelete { store.remove(at: $0) }
             }
-            .overlay { if store.sites.isEmpty { Text("오른쪽 위 +로 사이트를 추가하세요").foregroundStyle(.secondary) } }
             .navigationTitle("커뮤니티")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { EditButton() }

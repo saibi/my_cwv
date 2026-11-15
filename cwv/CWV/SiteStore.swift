@@ -1,45 +1,93 @@
 import Foundation
 import SwiftUI
 
+/// 사용자 데이터를 앱 삭제 후에도 남기는 보조 저장소 (실제로는 Backup.swift의 Keychain).
+struct KeyValueBackup {
+    var save: (Data) -> Void
+    var load: () -> Data?
+    static let none = KeyValueBackup(save: { _ in }, load: { nil })
+}
+
+/// 저장되는 사용자 데이터: 직접 추가한 사이트 + 기본 사이트별 글자 크기.
+private struct UserData: Codable {
+    var userSites: [Site]
+    var defaultZooms: [String: Double]  // 기본 사이트 id -> 글자 크기
+}
+
+/// default_page.csv(번들)를 읽는다. 없거나 유효한 줄이 없으면 Google 하나.
+func bundledDefaultPages() -> [Site] {
+    let text = Bundle.main.url(forResource: "default_page", withExtension: "csv")
+        .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
+    let sites = parseDefaultPages(text)
+    return sites.isEmpty ? fallbackSites() : sites
+}
+
 final class SiteStore: ObservableObject {
     private let defaults: UserDefaults
-    @Published var sites: [Site] { didSet { save() } }
+    private let backup: KeyValueBackup
+    let defaultPages: [Site]
+    @Published var userSites: [Site] { didSet { save() } }
+    @Published private var defaultZooms: [String: Double] { didSet { save() } }
     @Published var lastSiteID: UUID? {
         didSet { defaults.set(lastSiteID?.uuidString, forKey: "lastSiteID") }
     }
 
-    init(defaults: UserDefaults = .standard) {
+    /// 화면에 보이는 전체 목록: 기본 사이트(CSV) 다음에 사용자 사이트.
+    var sites: [Site] {
+        defaultPages.map { var s = $0; s.zoom = defaultZooms[s.id.uuidString] ?? 1.0; return s } + userSites
+    }
+
+    init(defaults: UserDefaults = .standard, backup: KeyValueBackup = .none, defaultPages: [Site] = bundledDefaultPages()) {
         self.defaults = defaults
-        if let data = defaults.data(forKey: "sites"),
-           let saved = try? JSONDecoder().decode([Site].self, from: data) {
-            sites = saved
+        self.backup = backup
+        self.defaultPages = defaultPages
+        let decoder = JSONDecoder()
+        // 우선순위: UserDefaults -> Keychain 백업(앱 삭제 후 재설치) -> 이전 버전의 단일 목록(마이그레이션)
+        let data = defaults.data(forKey: "userData") ?? backup.load()
+        if let data, let u = try? decoder.decode(UserData.self, from: data) {
+            userSites = u.userSites
+            defaultZooms = u.defaultZooms
+        } else if let old = defaults.data(forKey: "sites").flatMap({ try? decoder.decode([Site].self, from: $0) }) {
+            let byURL = Dictionary(defaultPages.map { ($0.url, $0.id) }, uniquingKeysWith: { a, _ in a })
+            userSites = old.filter { byURL[$0.url] == nil }
+            defaultZooms = Dictionary(old.compactMap { s in byURL[s.url].map { ($0.uuidString, s.zoom) } }, uniquingKeysWith: { a, _ in a })
         } else {
-            sites = defaultSites()
+            userSites = []
+            defaultZooms = [:]
         }
         lastSiteID = defaults.string(forKey: "lastSiteID").flatMap(UUID.init)
+        save()  // 복원/마이그레이션 결과를 두 저장소에 맞춘다
     }
 
     private func save() {
-        if let data = try? JSONEncoder().encode(sites) { defaults.set(data, forKey: "sites") }
+        guard let data = try? JSONEncoder().encode(UserData(userSites: userSites, defaultZooms: defaultZooms)) else { return }
+        defaults.set(data, forKey: "userData")
+        backup.save(data)
     }
 
     func add(name: String, url: URL) {
-        sites.append(Site(name: name, url: url))
+        userSites.append(Site(name: name, url: url))
     }
 
+    /// 사용자 사이트만 편집할 수 있다 (기본 사이트는 CSV에서 고친다).
     func update(_ site: Site) {
-        guard let i = sites.firstIndex(where: { $0.id == site.id }) else { return }
-        if sites[i].url != site.url { WebCache.drop(site.id) }
-        sites[i] = site
+        guard let i = userSites.firstIndex(where: { $0.id == site.id }) else { return }
+        if userSites[i].url != site.url { WebCache.drop(site.id) }
+        userSites[i] = site
     }
 
+    /// offsets는 userSites 기준.
     func remove(at offsets: IndexSet) {
-        offsets.forEach { WebCache.drop(sites[$0].id) }
-        sites.remove(atOffsets: offsets)
+        offsets.forEach { WebCache.drop(userSites[$0].id) }
+        userSites.remove(atOffsets: offsets)
     }
 
     func setZoom(_ id: UUID, _ zoom: Double) {
-        guard let i = sites.firstIndex(where: { $0.id == id }) else { return }
-        sites[i].zoom = clampZoom(zoom)
+        let z = clampZoom(zoom)
+        if let i = userSites.firstIndex(where: { $0.id == id }) {
+            userSites[i].zoom = z
+        } else if defaultPages.contains(where: { $0.id == id }) {
+            defaultZooms[id.uuidString] = z
+        }
     }
 }

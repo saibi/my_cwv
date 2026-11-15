@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct CWVApp: App {
-    @StateObject private var store = SiteStore()
+    @StateObject private var store = SiteStore(backup: .keychain)
     @State private var currentID: UUID?
     @State private var restored = false
 

@@ -38,8 +38,44 @@ func isExternal(_ url: URL, base: URL) -> Bool {
     return !(h == b || h.hasSuffix("." + b))
 }
 
-func defaultSites() -> [Site] {
-    [Site(name: "다모앙 공감", url: URL(string: "https://damoang.net/empathy")!)]
+/// 기본 페이지 파일이 없거나 유효한 줄이 없을 때 쓰는 항상 접속 가능한 사이트.
+func fallbackSites() -> [Site] {
+    let u = URL(string: "https://www.google.com")!
+    return [Site(id: stableID(for: u), name: "Google", url: u)]
+}
+
+/// 주소에서 만든 고정 UUID (FNV-1a 64비트 두 개). 기본 페이지를 매 실행 새로 읽어도 글자 크기 등이 같은 사이트에 붙는다.
+func stableID(for url: URL) -> UUID {
+    func fnv(_ seed: UInt64) -> UInt64 {
+        url.absoluteString.utf8.reduce(seed) { ($0 ^ UInt64($1)) &* 0x100000001b3 }
+    }
+    let a = fnv(0xcbf29ce484222325), b = fnv(0x84222325cbf29ce4)
+    var bytes = [UInt8](repeating: 0, count: 16)
+    for i in 0..<8 { bytes[i] = UInt8(truncatingIfNeeded: a >> (8 * UInt64(i))); bytes[8 + i] = UInt8(truncatingIfNeeded: b >> (8 * UInt64(i))) }
+    return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                       bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+}
+
+/// default_page.csv 해석. 한 줄에 `주소[,제목]`, 첫 쉼표 앞이 주소(주소에는 쉼표를 쓸 수 없다).
+/// 제목이 없으면 도메인. `#` 줄, 빈 줄, 잘못된 주소, 중복 주소는 건너뛴다.
+func parseDefaultPages(_ text: String) -> [Site] {
+    var seen = Set<UUID>()
+    return text.replacingOccurrences(of: "\u{FEFF}", with: "").split(whereSeparator: \.isNewline).compactMap { raw in
+        let line = raw.trimmingCharacters(in: .whitespaces)
+        if line.isEmpty || line.hasPrefix("#") { return nil }
+        let parts = line.split(separator: ",", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let url = normalizeURL(String(parts[0])) else { return nil }
+        let id = stableID(for: url)
+        guard seen.insert(id).inserted else { return nil }
+        let title = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
+        return Site(id: id, name: title.isEmpty ? (url.host ?? url.absoluteString) : title, url: url)
+    }
+}
+
+/// Safari로 열 주소: 지금 보는 페이지가 http/https면 그것, 아니면 사이트 기본 주소.
+func safariTarget(current: URL?, fallback: URL) -> URL {
+    if let c = current, let scheme = c.scheme?.lowercased(), scheme == "http" || scheme == "https" { return c }
+    return fallback
 }
 
 /// 사용자가 직접 누른 외부 도메인 링크만 Safari 시트로 보낸다 (리다이렉트, 로그인 흐름 제외).

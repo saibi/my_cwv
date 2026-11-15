@@ -70,32 +70,78 @@ struct TestSite {
         assert(!opensInSafariSheet(url("https://youtube.com/x"), base: base, linkActivated: false))
         assert(!opensInSafariSheet(url("https://damoang.net/x"), base: base, linkActivated: true))
 
-        // SiteStore: 격리된 UserDefaults에 저장 후 새 인스턴스로 복원
-        let suite = "cwv.test.\(UUID().uuidString)"
-        let ud = UserDefaults(suiteName: suite)!
-        defer { ud.removePersistentDomain(forName: suite) }
-        let st = SiteStore(defaults: ud)
-        assert(st.sites.count == 1 && st.lastSiteID == nil)  // 첫 실행은 기본값
+        // parseDefaultPages (PRS-M1)
+        let csv = "\u{FEFF}# 주석\n\nhttps://damoang.net/empathy,다모앙-공감\r\n  news.hada.io/new  \nhttps://a.com/x?y=1&z=2,제목, 쉼표 포함\nftp://bad.com\nnot a url\nhttps://damoang.net/empathy,중복\n,제목만\n"
+        let pages = parseDefaultPages(csv)
+        assert(pages.map(\.name) == ["다모앙-공감", "news.hada.io", "제목, 쉼표 포함"])
+        assert(pages[1].url.absoluteString == "https://news.hada.io/new")  // 제목 없으면 도메인, 주소는 정규화
+        assert(pages[2].url.absoluteString == "https://a.com/x?y=1&z=2")
+        assert(parseDefaultPages("").isEmpty && parseDefaultPages("# only\n\n").isEmpty)
+        assert(stableID(for: url("https://a.com/x")) == stableID(for: url("https://a.com/x")))
+        assert(stableID(for: url("https://a.com/x")) != stableID(for: url("https://a.com/y")))
+        assert(parseDefaultPages(csv).map(\.id) == pages.map(\.id))  // 다시 읽어도 id가 같다
+        assert(fallbackSites().count == 1 && fallbackSites()[0].url.host == "www.google.com")
+
+        // safariTarget (PRS-M4)
+        let fb = url("https://damoang.net/empathy")
+        assert(safariTarget(current: url("https://damoang.net/free/1"), fallback: fb).path == "/free/1")
+        assert(safariTarget(current: nil, fallback: fb) == fb)
+        assert(safariTarget(current: url("about:blank"), fallback: fb) == fb)
+
+        // SiteStore: 기본(CSV)/사용자 분리, 저장, Keychain 백업 복원, 마이그레이션
+        var vault: Data?  // 메모리 백업 (Keychain 대체)
+        let mem = KeyValueBackup(save: { vault = $0 }, load: { vault })
+        func fresh() -> (UserDefaults, () -> Void) {
+            let suite = "cwv.test.\(UUID().uuidString)"
+            let ud = UserDefaults(suiteName: suite)!
+            return (ud, { ud.removePersistentDomain(forName: suite) })
+        }
+        let (ud, clean) = fresh()
+        defer { clean() }
+        let st = SiteStore(defaults: ud, backup: mem, defaultPages: pages)
+        assert(st.sites.map(\.name) == pages.map(\.name) && st.lastSiteID == nil)  // 첫 실행: 기본만
         st.add(name: "A", url: url("https://a.com"))
         st.add(name: "B", url: url("https://b.com"))
-        st.sites.move(fromOffsets: [2], toOffset: 0)  // B, 다모앙, A
-        let b = st.sites[0]
-        st.setZoom(b.id, 1.25)  // 0.1 단위로 반올림: 1.3
-        st.setZoom(st.sites[1].id, 9)
-        st.lastSiteID = b.id
-        var edited = st.sites[2]
+        st.userSites.move(fromOffsets: [1], toOffset: 0)  // B, A
+        st.setZoom(st.userSites[0].id, 1.25)  // 0.1 단위 반올림: 1.3
+        st.setZoom(pages[0].id, 9)  // 기본 사이트 글자 크기: 3.0
+        st.lastSiteID = pages[0].id
+        var edited = st.userSites[1]
         edited.name = "A2"
         st.update(edited)
-        st.remove(at: [1])  // 다모앙 삭제
-        let st2 = SiteStore(defaults: ud)
-        assert(st2.sites.map(\.name) == ["B", "A2"])
-        assert(st2.sites[0].zoom == 1.3 && st2.lastSiteID == b.id)
+        st.update(pages[0])  // 기본 사이트는 편집 불가 (무시)
+        assert(st.sites[0].name == "다모앙-공감")
+        let st2 = SiteStore(defaults: ud, backup: .none, defaultPages: pages)
+        assert(st2.userSites.map(\.name) == ["B", "A2"] && st2.userSites[0].zoom == 1.3)
+        assert(st2.sites[0].zoom == 3.0 && st2.lastSiteID == pages[0].id)
 
-        // JSON 왕복과 기본값
-        let sites = defaultSites()
-        let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(sites))
-        assert(back == sites)
-        assert(sites.contains { $0.url.host == "damoang.net" })
+        // 앱 삭제 후 재설치: UserDefaults가 비어도 백업에서 복원 (lastSiteID는 복원 대상 아님)
+        let (ud3, clean3) = fresh()
+        defer { clean3() }
+        let st3 = SiteStore(defaults: ud3, backup: mem, defaultPages: pages)
+        assert(st3.userSites.map(\.name) == ["B", "A2"] && st3.sites[0].zoom == 3.0 && st3.lastSiteID == nil)
+
+        // CSV가 바뀌어도(기본 사이트 추가/삭제) 사용자 사이트는 그대로
+        let st4 = SiteStore(defaults: ud3, backup: mem, defaultPages: Array(pages.dropFirst()))
+        assert(st4.sites.map(\.name) == ["news.hada.io", "제목, 쉼표 포함", "B", "A2"])
+
+        // 사용자 사이트 삭제 (userSites 기준 offsets)
+        st4.remove(at: [0])
+        assert(st4.userSites.map(\.name) == ["A2"])
+
+        // 이전 버전(단일 목록 "sites") 마이그레이션: 기본 주소와 같은 항목은 기본으로 흡수하고 글자 크기를 이어받는다
+        let (ud5, clean5) = fresh()
+        defer { clean5() }
+        var old = [Site(name: "옛 다모앙", url: url("https://damoang.net/empathy"), zoom: 1.4), Site(name: "내 사이트", url: url("https://mine.com"), zoom: 1.2)]
+        ud5.set(try JSONEncoder().encode(old), forKey: "sites")
+        let st5 = SiteStore(defaults: ud5, backup: .none, defaultPages: pages)
+        assert(st5.userSites.map(\.name) == ["내 사이트"] && st5.userSites[0].zoom == 1.2)
+        assert(st5.sites[0].zoom == 1.4)
+        old.removeAll()
+
+        // JSON 왕복
+        let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(pages))
+        assert(back == pages)
 
         print("test_site: OK")
     }

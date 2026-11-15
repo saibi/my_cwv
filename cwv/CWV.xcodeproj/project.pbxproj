@@ -54,6 +54,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = A10000000000000000000010 /* Build configuration list for PBXNativeTarget "CWV" */;
 			buildPhases = (
+				A10000000000000000000020 /* Check default_page.csv */,
 				A10000000000000000000008 /* Sources */,
 				A10000000000000000000004 /* Frameworks */,
 				A10000000000000000000009 /* Resources */,
@@ -114,6 +115,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A10000000000000000000020 /* Check default_page.csv */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Check default_page.csv";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ ! -f \"${SRCROOT}/CWV/default_page.csv\" ]; then\n  echo 'warning: cwv/CWV/default_page.csv 파일이 없어 기본 페이지가 Google 하나로 설치됩니다. 빌드 전에 기본 페이지 파일을 먼저 작성하세요.'\n  echo 'warning: 형식: 한 줄에 주소[,제목]. 제목은 옵션이고 없으면 도메인을 씁니다. #으로 시작하는 줄과 빈 줄은 무시합니다. 예) https://damoang.net/empathy,다모앙-공감'\n  echo 'warning: 견본 복사: cp cwv/default_page.csv.example cwv/CWV/default_page.csv'\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		A10000000000000000000008 /* Sources */ = {
