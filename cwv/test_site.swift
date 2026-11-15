@@ -87,7 +87,7 @@ struct TestSite {
         assert(auto.displayName(cached: nil) == "news.hada.io")  // 타이틀을 모르면 도메인
         assert(auto.displayName(cached: "GeekNews") == "GeekNews")
         assert(Site(name: "내 이름", url: auto.url).displayName(cached: "GeekNews") == "내 이름")  // 직접 정한 이름이 우선
-        assert(Site(name: "news.hada.io", url: auto.url).displayName(cached: "GeekNews") == "GeekNews")  // 이전 버전의 도메인 이름은 자동
+        assert(Site(name: "news.hada.io", url: auto.url).displayName(cached: "GeekNews") == "news.hada.io")  // CSV 등에 명시한 도메인 제목도 존중 (SWT-R3)
         assert(usableTitle("  날짜별 공감글 | 다모앙 \n") == "날짜별 공감글 | 다모앙")
         assert(usableTitle(nil) == nil && usableTitle("   ") == nil)
         assert(usableTitle("Just a moment...") == nil && usableTitle("Attention Required! | Cloudflare") == nil)
@@ -158,6 +158,30 @@ struct TestSite {
         assert(st7.title(for: st7.defaultPages[0]) == "다모앙-공감")
         let st7b = SiteStore(defaults: ud7, backup: .none, defaultPages: pages)
         assert(st7b.title(for: hada) == "GeekNews")  // 재실행 후에도 유지
+
+        // 주소를 바꾸면 이전 사이트의 제목 캐시를 버린다 (SWT-R1)
+        let (ud8, clean8) = fresh()
+        defer { clean8() }
+        let st8 = SiteStore(defaults: ud8, backup: .none, defaultPages: pages)
+        st8.add(name: "", url: url("https://a.com"))
+        var a8 = st8.userSites[0]
+        st8.setPageTitle(a8.id, "A 사이트")
+        assert(st8.title(for: a8) == "A 사이트")
+        a8.url = url("https://b.com")
+        st8.update(a8)
+        assert(st8.title(for: st8.userSites[0]) == "b.com")
+        assert(SiteStore(defaults: ud8, backup: .none, defaultPages: pages).title(for: a8) == "b.com")  // 재실행 후에도
+
+        // 이전 버전이 도메인을 이름으로 저장한 사용자 사이트는 자동 이름으로 되돌아와 페이지 제목을 쓴다 (SWT-R3)
+        let (ud9, clean9) = fresh()
+        defer { clean9() }
+        let legacy = [Site(name: "mine.com", url: url("https://mine.com")), Site(name: "직접 지은 이름", url: url("https://x.com"))]
+        ud9.set(try JSONEncoder().encode(legacy), forKey: "sites")  // 마이그레이션 경로
+        let st9 = SiteStore(defaults: ud9, backup: .none, defaultPages: pages)
+        assert(st9.userSites.map(\.name) == ["", "직접 지은 이름"])
+        st9.setPageTitle(st9.userSites[0].id, "Mine 제목")
+        assert(st9.title(for: st9.userSites[0]) == "Mine 제목" && st9.title(for: st9.userSites[1]) == "직접 지은 이름")
+        assert(parseDefaultPages("https://a.com,a.com")[0].displayName(cached: "페이지 제목") == "a.com")  // 명시한 CSV 제목이 우선
 
         // 사용자 사이트 삭제 (userSites 기준 offsets)
         st4.remove(at: [0])

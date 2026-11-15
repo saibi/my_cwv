@@ -50,12 +50,14 @@ final class SiteStore: ObservableObject {
         func decode(_ d: Data?) -> UserData? { d.flatMap { try? decoder.decode(UserData.self, from: $0) } }
         var restoredLast = defaults.string(forKey: "lastSiteID").flatMap(UUID.init)
         // 우선순위: UserDefaults -> Keychain 백업(앱 삭제 후 재설치, UserDefaults가 깨졌을 때) -> 이전 버전의 단일 목록(마이그레이션)
+        // 이전 버전은 이름을 비우면 도메인을 이름으로 저장했다. 그런 사용자 사이트는 자동 이름("")으로 되돌린다.
+        func clean(_ s: Site) -> Site { var s = s; if s.name == s.url.host { s.name = "" }; return s }
         if let u = decode(defaults.data(forKey: "userData")) ?? decode(backup.load()) {
-            userSites = u.userSites
+            userSites = u.userSites.map(clean)
             defaultZooms = u.defaultZooms
         } else if let old = defaults.data(forKey: "sites").flatMap({ try? decoder.decode([Site].self, from: $0) }) {
             let byURL = Dictionary(defaultPages.map { ($0.url, $0.id) }, uniquingKeysWith: { a, _ in a })
-            userSites = old.filter { byURL[$0.url] == nil }
+            userSites = old.filter { byURL[$0.url] == nil }.map(clean)
             defaultZooms = Dictionary(old.compactMap { s in byURL[s.url].map { ($0.uuidString, s.zoom) } }, uniquingKeysWith: { a, _ in a })
             // 이전 기본 사이트는 임의 id였으므로, 마지막으로 연 사이트가 그것이면 새 고정 id로 바꾼다
             if let last = old.first(where: { $0.id == restoredLast }), let new = byURL[last.url] { restoredLast = new }
@@ -88,7 +90,10 @@ final class SiteStore: ObservableObject {
     /// 사용자 사이트만 편집할 수 있다 (기본 사이트는 CSV에서 고친다).
     func update(_ site: Site) {
         guard let i = userSites.firstIndex(where: { $0.id == site.id }) else { return }
-        if userSites[i].url != site.url { WebCache.drop(site.id) }
+        if userSites[i].url != site.url {
+            WebCache.drop(site.id)
+            pageTitles[site.id.uuidString] = nil  // 다른 사이트가 되었으니 이전 사이트의 제목은 버린다
+        }
         userSites[i] = site
     }
 

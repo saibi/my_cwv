@@ -10,12 +10,10 @@ struct Site: Codable, Identifiable, Equatable {
 }
 
 extension Site {
-    /// 목록에 보이는 이름: 직접 정한 이름 > 저장해 둔 페이지 타이틀 > 도메인.
-    /// 이름이 비었거나 도메인과 똑같으면(이전 버전이 저장한 자동 이름) 정하지 않은 것으로 본다.
+    /// 목록에 보이는 이름: 직접 정한 이름(CSV 제목 포함) > 저장해 둔 페이지 타이틀 > 도메인.
     func displayName(cached: String?) -> String {
         let n = name.trimmingCharacters(in: .whitespaces)
-        if !n.isEmpty && n != url.host { return n }
-        return cached ?? url.host ?? url.absoluteString
+        return n.isEmpty ? (cached ?? url.host ?? url.absoluteString) : n
     }
 }
 

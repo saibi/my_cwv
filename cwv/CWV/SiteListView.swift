@@ -79,8 +79,7 @@ struct SiteEditView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("저장", action: save) }
             }
             .onAppear {
-                // 이전 버전이 도메인을 이름으로 박아 둔 사이트는 자동 이름으로 보고 비워 보여준다
-                name = existing.flatMap { $0.name == $0.url.host ? "" : $0.name } ?? ""
+                name = existing?.name ?? ""
                 urlText = existing?.url.absoluteString ?? ""
             }
         }
