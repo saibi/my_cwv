@@ -1,4 +1,4 @@
-# 기본 페이지 목록 견본. 이 파일을 cwv/CWV/default_page.csv 로 복사해서 고치세요.
+# 기본 페이지 목록 견본 (앱 첫 실행과 '기본값으로 초기화'에 쓰임). 이 파일을 cwv/CWV/default_page.csv 로 복사해서 고치세요.
 #   cp cwv/default_page.csv.example cwv/CWV/default_page.csv
 # 한 줄에 사이트 하나: 주소[,제목]
 #  - 제목은 옵션입니다. 없으면 주소의 도메인을 이름으로 씁니다.

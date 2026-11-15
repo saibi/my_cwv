@@ -8,10 +8,13 @@ struct KeyValueBackup {
     static let none = KeyValueBackup(save: { _ in }, load: { nil })
 }
 
-/// 저장되는 사용자 데이터: 직접 추가한 사이트 + 기본 사이트별 글자 크기.
-private struct UserData: Codable {
+/// 저장되는 목록 (사이트별 글자 크기는 Site.zoom에 들어 있다).
+private struct SiteList: Codable { var sites: [Site] }
+
+/// 이전 버전(기본/사용자 분리)의 저장 형식. 마이그레이션에만 쓴다.
+private struct LegacyUserData: Codable {
     var userSites: [Site]
-    var defaultZooms: [String: Double]  // 기본 사이트 id -> 글자 크기
+    var defaultZooms: [String: Double]
 }
 
 /// default_page.csv(번들)를 읽는다. 없거나 유효한 줄이 없으면 Google 하나.
@@ -25,9 +28,9 @@ func bundledDefaultPages() -> [Site] {
 final class SiteStore: ObservableObject {
     private let defaults: UserDefaults
     private let backup: KeyValueBackup
-    let defaultPages: [Site]
-    @Published var userSites: [Site] { didSet { save() } }
-    @Published private var defaultZooms: [String: Double] { didSet { save() } }
+    private let defaultPages: [Site]
+    /// 목록 하나. 첫 실행 때만 기본 목록으로 만들고, 그 뒤로는 앱이 건드리지 않는다.
+    @Published var sites: [Site] { didSet { save() } }
     /// 사이트 id -> 첫 페이지에서 받은 타이틀 (캐시. 앱을 다시 실행해도 유지, Keychain 백업은 안 함)
     @Published private(set) var pageTitles: [String: String] {
         didSet { defaults.set(pageTitles, forKey: "pageTitles") }
@@ -36,42 +39,35 @@ final class SiteStore: ObservableObject {
         didSet { defaults.set(lastSiteID?.uuidString, forKey: "lastSiteID") }
     }
 
-    /// 화면에 보이는 전체 목록: 기본 사이트(CSV) 다음에 사용자 사이트.
-    var sites: [Site] {
-        defaultPages.map { var s = $0; s.zoom = defaultZooms[s.id.uuidString] ?? 1.0; return s } + userSites
-    }
-
     init(defaults: UserDefaults = .standard, backup: KeyValueBackup = .none, defaultPages: [Site] = bundledDefaultPages()) {
         self.defaults = defaults
         self.backup = backup
         self.defaultPages = defaultPages
         pageTitles = defaults.dictionary(forKey: "pageTitles") as? [String: String] ?? [:]
         let decoder = JSONDecoder()
-        func decode(_ d: Data?) -> UserData? { d.flatMap { try? decoder.decode(UserData.self, from: $0) } }
-        var restoredLast = defaults.string(forKey: "lastSiteID").flatMap(UUID.init)
-        // 우선순위: UserDefaults -> Keychain 백업(앱 삭제 후 재설치, UserDefaults가 깨졌을 때) -> 이전 버전의 단일 목록(마이그레이션)
-        // 이전 버전은 이름을 비우면 도메인을 이름으로 저장했다. 그런 사용자 사이트는 자동 이름("")으로 되돌린다.
+        func list(_ d: Data?) -> [Site]? { d.flatMap { try? decoder.decode(SiteList.self, from: $0) }?.sites }
+        func legacy(_ d: Data?) -> LegacyUserData? { d.flatMap { try? decoder.decode(LegacyUserData.self, from: $0) } }
+        // 이전 버전은 이름을 비우면 도메인을 이름으로 저장했다. 그런 사이트는 자동 이름("")으로 되돌린다.
         func clean(_ s: Site) -> Site { var s = s; if s.name == s.url.host { s.name = "" }; return s }
-        if let u = decode(defaults.data(forKey: "userData")) ?? decode(backup.load()) {
-            userSites = u.userSites.map(clean)
-            defaultZooms = u.defaultZooms
+        let kc = backup.load()
+        // 우선순위: 저장된 목록(UserDefaults -> Keychain) -> 이전 형식 마이그레이션 -> 첫 실행(기본 목록)
+        if let saved = list(defaults.data(forKey: "siteList")) ?? list(kc) {
+            sites = saved
+        } else if let u = legacy(defaults.data(forKey: "userData")) ?? legacy(kc) {
+            // 기본/사용자 분리 형식: 화면에 보이던 순서(기본 항목 다음 사용자 사이트)로 이어 붙인다
+            sites = defaultPages.map { var s = $0; s.zoom = u.defaultZooms[s.id.uuidString] ?? 1.0; return s } + u.userSites.map(clean)
         } else if let old = defaults.data(forKey: "sites").flatMap({ try? decoder.decode([Site].self, from: $0) }) {
-            let byURL = Dictionary(defaultPages.map { ($0.url, $0.id) }, uniquingKeysWith: { a, _ in a })
-            userSites = old.filter { byURL[$0.url] == nil }.map(clean)
-            defaultZooms = Dictionary(old.compactMap { s in byURL[s.url].map { ($0.uuidString, s.zoom) } }, uniquingKeysWith: { a, _ in a })
-            // 이전 기본 사이트는 임의 id였으므로, 마지막으로 연 사이트가 그것이면 새 고정 id로 바꾼다
-            if let last = old.first(where: { $0.id == restoredLast }), let new = byURL[last.url] { restoredLast = new }
+            sites = old.map(clean)
         } else {
-            userSites = []
-            defaultZooms = [:]
+            sites = defaultPages
         }
-        lastSiteID = restoredLast
-        save()  // 복원/마이그레이션 결과를 두 저장소에 맞춘다
+        lastSiteID = defaults.string(forKey: "lastSiteID").flatMap(UUID.init)
+        save()  // 복원/마이그레이션/최초 생성 결과를 두 저장소에 맞춘다
     }
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(UserData(userSites: userSites, defaultZooms: defaultZooms)) else { return }
-        defaults.set(data, forKey: "userData")
+        guard let data = try? JSONEncoder().encode(SiteList(sites: sites)) else { return }
+        defaults.set(data, forKey: "siteList")
         backup.save(data)
     }
 
@@ -84,31 +80,34 @@ final class SiteStore: ObservableObject {
     }
 
     func add(name: String, url: URL) {
-        userSites.append(Site(name: name, url: url))
+        sites.append(Site(name: name, url: url))
     }
 
-    /// 사용자 사이트만 편집할 수 있다 (기본 사이트는 CSV에서 고친다).
     func update(_ site: Site) {
-        guard let i = userSites.firstIndex(where: { $0.id == site.id }) else { return }
-        if userSites[i].url != site.url {
+        guard let i = sites.firstIndex(where: { $0.id == site.id }) else { return }
+        if sites[i].url != site.url {
             WebCache.drop(site.id)
             pageTitles[site.id.uuidString] = nil  // 다른 사이트가 되었으니 이전 사이트의 제목은 버린다
         }
-        userSites[i] = site
+        sites[i] = site
     }
 
-    /// offsets는 userSites 기준.
     func remove(at offsets: IndexSet) {
-        offsets.forEach { WebCache.drop(userSites[$0].id) }
-        userSites.remove(atOffsets: offsets)
+        offsets.forEach { WebCache.drop(sites[$0].id) }
+        sites.remove(atOffsets: offsets)
     }
 
     func setZoom(_ id: UUID, _ zoom: Double) {
-        let z = clampZoom(zoom)
-        if let i = userSites.firstIndex(where: { $0.id == id }) {
-            userSites[i].zoom = z
-        } else if defaultPages.contains(where: { $0.id == id }) {
-            defaultZooms[id.uuidString] = z
-        }
+        guard let i = sites.firstIndex(where: { $0.id == id }) else { return }
+        sites[i].zoom = clampZoom(zoom)
     }
+
+    /// 목록 전체를 바꾼다 (초기화, CSV 복원). 열려 있던 웹뷰는 모두 버린다.
+    func replace(with new: [Site]) {
+        sites.forEach { WebCache.drop($0.id) }
+        sites = new
+    }
+
+    /// 앱에 들어 있는 기본 목록으로 되돌린다 (글자 크기는 100%).
+    func reset() { replace(with: defaultPages) }
 }
