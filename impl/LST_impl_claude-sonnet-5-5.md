@@ -1,7 +1,7 @@
 # [LST] 구현 노트
 
 - 계획: plan/LST_plan_claude-sonnet-5-5.md
-- 구현 커밋: (커밋 후 기재) (리뷰 반영 커밋은 review/LST_refine_*.md)
+- 구현 커밋: 06548ef (리뷰 반영 커밋은 review/LST_refine_*.md)
 
 ## 아키텍처
 | 파일 | 역할 |
