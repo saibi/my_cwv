@@ -3,10 +3,13 @@ import WebKit
 import SafariServices
 
 /// 사이트 하나의 WKWebView와 delegate. 목록에 다녀와도 페이지와 스크롤이 유지되도록 캐시한다.
-final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate {
+final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate, UIGestureRecognizerDelegate {
     let web: WKWebView
     var base: URL
     var onExternal: ((URL) -> Void)?
+    var onBack: (() -> Void)?
+    var onTitle: ((String) -> Void)?
+    private var titleObs: NSKeyValueObservation?
     private let refresh = UIRefreshControl()
 
     init(base: URL) {
@@ -20,6 +23,13 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate {
         web.navigationDelegate = self
         web.uiDelegate = self
         web.allowsBackForwardNavigationGestures = true
+        // 웹 기록이 없는 첫 페이지에서 왼쪽 가장자리 스와이프는 목록으로 간다 (기록이 있으면 WebKit의 뒤로가기가 먼저).
+        let edge = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(edgePan(_:)))
+        edge.edges = .left
+        edge.delegate = self
+        web.addGestureRecognizer(edge)
+        // 첫 페이지(웹 기록 없음)의 타이틀만 목록 이름 후보로 보고한다. 글 상세 제목이 사이트 이름이 되지 않게.
+        titleObs = web.observe(\.title) { [weak self] _, _ in self?.reportTitle() }
         refresh.addTarget(self, action: #selector(reload), for: .valueChanged)
         web.scrollView.refreshControl = refresh
         // 광고 규칙 컴파일은 비동기라 끝난 뒤에 로드한다. 실패해도 광고만 보일 뿐 페이지는 열린다.
@@ -31,6 +41,19 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     @objc private func reload() { web.reload() }
+
+    @objc private func edgePan(_ g: UIScreenEdgePanGestureRecognizer) {
+        guard g.state == .ended else { return }
+        if shouldCloseOnEdgeSwipe(translation: g.translation(in: g.view).x, velocity: g.velocity(in: g.view).x) { onBack?() }
+    }
+
+    func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool { !web.canGoBack }
+
+    /// 콜백이 늦게 붙거나 캐시된 웹뷰가 다시 표시될 때도 호출한다. 뷰 갱신 중 상태를 바꾸지 않도록 다음 런루프에서 전달한다.
+    func reportTitle() {
+        guard web.backForwardList.backList.isEmpty, let t = usableTitle(web.title) else { return }
+        DispatchQueue.main.async { [weak self] in self?.onTitle?(t) }
+    }
 
     private var appliedZoom: Double?
 
@@ -151,6 +174,8 @@ enum WebCache {
 struct WebView: UIViewRepresentable {
     let site: Site
     let onExternal: (URL) -> Void
+    let onBack: () -> Void
+    let onTitle: (String) -> Void
 
     // delegate는 WKWebView가 약하게만 잡으므로, 표시 중인 SiteWebView는 여기서 강하게 보유한다
     // (캐시가 메모리 경고로 비워져도 제어가 끊기지 않게).
@@ -167,6 +192,9 @@ struct WebView: UIViewRepresentable {
 
     private func sync(_ v: SiteWebView) {
         v.onExternal = onExternal
+        v.onBack = onBack
+        v.onTitle = onTitle
+        v.reportTitle()
         v.apply(zoom: site.zoom)
     }
 }

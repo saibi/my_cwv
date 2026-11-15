@@ -18,7 +18,8 @@ struct BrowserView: View {
     var body: some View {
         GeometryReader { g in
             ZStack(alignment: alignment) {
-                WebView(site: site) { external = ExternalLink(url: $0) }
+                WebView(site: site, onExternal: { external = ExternalLink(url: $0) }, onBack: onClose,
+                        onTitle: { store.setPageTitle(site.id, $0) })
                 menu.padding(margin).offset(drag)
                     .simultaneousGesture(DragGesture(minimumDistance: 8)
                         .onChanged { drag = $0.translation }

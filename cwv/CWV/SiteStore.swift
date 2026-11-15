@@ -28,6 +28,10 @@ final class SiteStore: ObservableObject {
     let defaultPages: [Site]
     @Published var userSites: [Site] { didSet { save() } }
     @Published private var defaultZooms: [String: Double] { didSet { save() } }
+    /// 사이트 id -> 첫 페이지에서 받은 타이틀 (캐시. 앱을 다시 실행해도 유지, Keychain 백업은 안 함)
+    @Published private(set) var pageTitles: [String: String] {
+        didSet { defaults.set(pageTitles, forKey: "pageTitles") }
+    }
     @Published var lastSiteID: UUID? {
         didSet { defaults.set(lastSiteID?.uuidString, forKey: "lastSiteID") }
     }
@@ -41,6 +45,7 @@ final class SiteStore: ObservableObject {
         self.defaults = defaults
         self.backup = backup
         self.defaultPages = defaultPages
+        pageTitles = defaults.dictionary(forKey: "pageTitles") as? [String: String] ?? [:]
         let decoder = JSONDecoder()
         func decode(_ d: Data?) -> UserData? { d.flatMap { try? decoder.decode(UserData.self, from: $0) } }
         var restoredLast = defaults.string(forKey: "lastSiteID").flatMap(UUID.init)
@@ -66,6 +71,14 @@ final class SiteStore: ObservableObject {
         guard let data = try? JSONEncoder().encode(UserData(userSites: userSites, defaultZooms: defaultZooms)) else { return }
         defaults.set(data, forKey: "userData")
         backup.save(data)
+    }
+
+    /// 목록에 보일 이름.
+    func title(for site: Site) -> String { site.displayName(cached: pageTitles[site.id.uuidString]) }
+
+    func setPageTitle(_ id: UUID, _ raw: String) {
+        guard let t = usableTitle(raw), pageTitles[id.uuidString] != t else { return }
+        pageTitles[id.uuidString] = t
     }
 
     func add(name: String, url: URL) {

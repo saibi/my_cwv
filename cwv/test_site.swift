@@ -73,14 +73,26 @@ struct TestSite {
         // parseDefaultPages (PRS-M1)
         let csv = "\u{FEFF}# 주석\n\nhttps://damoang.net/empathy,다모앙-공감\r\n  news.hada.io/new  \nhttps://a.com/x?y=1&z=2,제목, 쉼표 포함\nftp://bad.com\nnot a url\nhttps://damoang.net/empathy,중복\n,제목만\n"
         let pages = parseDefaultPages(csv)
-        assert(pages.map(\.name) == ["다모앙-공감", "news.hada.io", "제목, 쉼표 포함"])
-        assert(pages[1].url.absoluteString == "https://news.hada.io/new")  // 제목 없으면 도메인, 주소는 정규화
+        assert(pages.map(\.name) == ["다모앙-공감", "", "제목, 쉼표 포함"])  // 제목 없으면 빈 이름(자동)
+        assert(pages[1].url.absoluteString == "https://news.hada.io/new")  // 주소는 정규화
         assert(pages[2].url.absoluteString == "https://a.com/x?y=1&z=2")
         assert(parseDefaultPages("").isEmpty && parseDefaultPages("# only\n\n").isEmpty)
         assert(stableID(for: url("https://a.com/x")) == stableID(for: url("https://a.com/x")))
         assert(stableID(for: url("https://a.com/x")) != stableID(for: url("https://a.com/y")))
         assert(parseDefaultPages(csv).map(\.id) == pages.map(\.id))  // 다시 읽어도 id가 같다
         assert(fallbackSites().count == 1 && fallbackSites()[0].url.host == "www.google.com")
+
+        // displayName / usableTitle / 스와이프 기준 (SWT-M1)
+        let auto = Site(name: "", url: url("https://news.hada.io/new"))
+        assert(auto.displayName(cached: nil) == "news.hada.io")  // 타이틀을 모르면 도메인
+        assert(auto.displayName(cached: "GeekNews") == "GeekNews")
+        assert(Site(name: "내 이름", url: auto.url).displayName(cached: "GeekNews") == "내 이름")  // 직접 정한 이름이 우선
+        assert(Site(name: "news.hada.io", url: auto.url).displayName(cached: "GeekNews") == "GeekNews")  // 이전 버전의 도메인 이름은 자동
+        assert(usableTitle("  날짜별 공감글 | 다모앙 \n") == "날짜별 공감글 | 다모앙")
+        assert(usableTitle(nil) == nil && usableTitle("   ") == nil)
+        assert(usableTitle("Just a moment...") == nil && usableTitle("Attention Required! | Cloudflare") == nil)
+        assert(shouldCloseOnEdgeSwipe(translation: 100, velocity: 0) && shouldCloseOnEdgeSwipe(translation: 20, velocity: 900))
+        assert(!shouldCloseOnEdgeSwipe(translation: 30, velocity: 100) && !shouldCloseOnEdgeSwipe(translation: -100, velocity: -900))
 
         // safariTarget (PRS-M4)
         let fb = url("https://damoang.net/empathy")
@@ -130,7 +142,22 @@ struct TestSite {
 
         // CSV가 바뀌어도(기본 사이트 추가/삭제) 사용자 사이트는 그대로
         let st4 = SiteStore(defaults: ud3, backup: mem, defaultPages: Array(pages.dropFirst()))
-        assert(st4.sites.map(\.name) == ["news.hada.io", "제목, 쉼표 포함", "B", "A2"])
+        assert(st4.sites.map(\.name) == ["", "제목, 쉼표 포함", "B", "A2"])
+
+        // 페이지 타이틀 캐시: 저장되고 다시 실행해도 유지, 글 상세 같은 빈 값/차단 화면 제목은 무시 (SWT-M2)
+        let (ud7, clean7) = fresh()
+        defer { clean7() }
+        let st7 = SiteStore(defaults: ud7, backup: .none, defaultPages: pages)
+        let hada = st7.defaultPages[1]
+        assert(st7.title(for: hada) == "news.hada.io" && st7.title(for: st7.defaultPages[0]) == "다모앙-공감")
+        st7.setPageTitle(hada.id, " GeekNews ")
+        st7.setPageTitle(hada.id, "Just a moment...")
+        st7.setPageTitle(hada.id, "")
+        assert(st7.title(for: hada) == "GeekNews")
+        st7.setPageTitle(st7.defaultPages[0].id, "무시됨")  // 직접 정한 제목이 우선
+        assert(st7.title(for: st7.defaultPages[0]) == "다모앙-공감")
+        let st7b = SiteStore(defaults: ud7, backup: .none, defaultPages: pages)
+        assert(st7b.title(for: hada) == "GeekNews")  // 재실행 후에도 유지
 
         // 사용자 사이트 삭제 (userSites 기준 offsets)
         st4.remove(at: [0])

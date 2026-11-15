@@ -9,6 +9,28 @@ struct Site: Codable, Identifiable, Equatable {
     var zoom: Double = 1.0
 }
 
+extension Site {
+    /// 목록에 보이는 이름: 직접 정한 이름 > 저장해 둔 페이지 타이틀 > 도메인.
+    /// 이름이 비었거나 도메인과 똑같으면(이전 버전이 저장한 자동 이름) 정하지 않은 것으로 본다.
+    func displayName(cached: String?) -> String {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        if !n.isEmpty && n != url.host { return n }
+        return cached ?? url.host ?? url.absoluteString
+    }
+}
+
+/// 페이지 타이틀로 쓸 수 있는 문자열. 비었거나 Cloudflare 확인 화면 제목이면 nil.
+func usableTitle(_ raw: String?) -> String? {
+    guard let t = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty,
+          !t.lowercased().hasPrefix("just a moment"), !t.lowercased().hasPrefix("attention required") else { return nil }
+    return t
+}
+
+/// 첫 페이지의 왼쪽 가장자리 스와이프를 "목록으로"로 볼 기준 (충분히 이동했거나 빠르게 밀었을 때).
+func shouldCloseOnEdgeSwipe(translation: Double, velocity: Double) -> Bool {
+    translation > 80 || velocity > 500
+}
+
 let zoomRange = 0.5...3.0
 
 func clampZoom(_ z: Double) -> Double {
@@ -57,7 +79,7 @@ func stableID(for url: URL) -> UUID {
 }
 
 /// default_page.csv 해석. 한 줄에 `주소[,제목]`, 첫 쉼표 앞이 주소(주소에는 쉼표를 쓸 수 없다).
-/// 제목이 없으면 도메인. `#` 줄, 빈 줄, 잘못된 주소, 중복 주소는 건너뛴다.
+/// 제목이 없으면 name이 빈 문자열이다(표시할 때 페이지 타이틀, 없으면 도메인). `#` 줄, 빈 줄, 잘못된 주소, 중복 주소는 건너뛴다.
 func parseDefaultPages(_ text: String) -> [Site] {
     var seen = Set<UUID>()
     return text.replacingOccurrences(of: "\u{FEFF}", with: "").split(whereSeparator: \.isNewline).compactMap { raw in
@@ -68,7 +90,7 @@ func parseDefaultPages(_ text: String) -> [Site] {
         let id = stableID(for: url)
         guard seen.insert(id).inserted else { return nil }
         let title = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
-        return Site(id: id, name: title.isEmpty ? (url.host ?? url.absoluteString) : title, url: url)
+        return Site(id: id, name: title, url: url)  // 제목이 없으면 name은 빈 문자열(자동: 페이지 타이틀 -> 도메인)
     }
 }
 

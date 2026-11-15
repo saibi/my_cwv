@@ -11,11 +11,13 @@ struct CWVApp: App {
             Group {
                 if let site = store.sites.first(where: { $0.id == currentID }) {
                     BrowserView(site: site) {
-                        currentID = nil
+                        withAnimation(.easeInOut(duration: 0.25)) { currentID = nil }
                         store.lastSiteID = nil
                     }
+                    .transition(.move(edge: .trailing))
                 } else {
                     SiteListView { open($0) }
+                        .transition(.move(edge: .leading))
                 }
             }
             .environmentObject(store)
@@ -28,7 +30,7 @@ struct CWVApp: App {
     }
 
     private func open(_ site: Site) {
-        currentID = site.id
+        withAnimation(.easeInOut(duration: 0.25)) { currentID = site.id }
         store.lastSiteID = site.id
     }
 }

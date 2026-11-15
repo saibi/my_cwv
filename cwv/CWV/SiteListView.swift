@@ -13,7 +13,7 @@ struct SiteListView: View {
     private func row(_ site: Site) -> some View {
         Button { onOpen(site) } label: {
             VStack(alignment: .leading, spacing: 2) {
-                Text(site.name).font(.headline)
+                Text(store.title(for: site)).font(.headline)
                 Text(site.url.absoluteString).font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -65,7 +65,7 @@ struct SiteEditView: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("이름 (비우면 도메인)", text: $name)
+                TextField("이름 (비우면 페이지 제목)", text: $name)
                 TextField("주소 (예: damoang.net/empathy)", text: $urlText)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
@@ -79,7 +79,8 @@ struct SiteEditView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("저장", action: save) }
             }
             .onAppear {
-                name = existing?.name ?? ""
+                // 이전 버전이 도메인을 이름으로 박아 둔 사이트는 자동 이름으로 보고 비워 보여준다
+                name = existing.flatMap { $0.name == $0.url.host ? "" : $0.name } ?? ""
                 urlText = existing?.url.absoluteString ?? ""
             }
         }
@@ -91,7 +92,7 @@ struct SiteEditView: View {
             return
         }
         let n = name.trimmingCharacters(in: .whitespaces)
-        let finalName = n.isEmpty ? (url.host ?? url.absoluteString) : n
+        let finalName = n  // 비우면 ""(자동: 페이지 타이틀 -> 도메인)
         if var s = existing {
             s.name = finalName
             s.url = url
