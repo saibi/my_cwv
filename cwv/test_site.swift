@@ -48,6 +48,23 @@ struct TestSite {
         let rules = try JSONSerialization.jsonObject(with: Data(contentsOf: url("file://" + FileManager.default.currentDirectoryPath + "/cwv/CWV/adblock.json"))) as! [[String: Any]]
         assert(!rules.isEmpty && rules.allSatisfy { $0["trigger"] != nil && $0["action"] != nil })
 
+        // adblock.json url-filter: 광고 호스트만 막고, 정상 URL의 경로/쿼리/비슷한 호스트는 막지 않는다 (UXP-R1)
+        func blocked(_ u: String) -> Bool {
+            rules.contains {
+                guard let f = ($0["trigger"] as? [String: Any])?["url-filter"] as? String, f != ".*",
+                      let re = try? NSRegularExpression(pattern: f, options: .caseInsensitive) else { return false }
+                return re.firstMatch(in: u, range: NSRange(u.startIndex..., in: u)) != nil
+            }
+        }
+        assert(blocked("https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"))
+        assert(blocked("https://securepubads.g.doubleclick.net/tag/js/gpt.js"))
+        assert(blocked("https://doubleclick.net/x"))
+        assert(blocked("https://t1.daumcdn.net/kas/static/ba.min.js"))
+        assert(!blocked("https://community.example/api/search?q=doubleclick.net"))
+        assert(!blocked("https://notdoubleclick.net/main.js"))
+        assert(!blocked("https://damoang.net/empathy"))
+        assert(!blocked("https://t1.daumcdn.net/other/x.js"))
+
         // opensInSafariSheet: 직접 누른 외부 링크만 (새 창/리다이렉트/로그인 흐름은 웹뷰 유지)
         assert(opensInSafariSheet(url("https://youtube.com/x"), base: base, linkActivated: true))
         assert(!opensInSafariSheet(url("https://youtube.com/x"), base: base, linkActivated: false))

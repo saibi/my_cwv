@@ -64,5 +64,6 @@ struct BrowserView: View {
                 .background(.ultraThinMaterial, in: Circle())
                 .opacity(0.85)
         }
+        .accessibilityLabel("글자 크기 및 목록 메뉴")
     }
 }

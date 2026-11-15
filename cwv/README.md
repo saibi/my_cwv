@@ -10,7 +10,7 @@
 - Google 소셜 로그인은 내장 웹뷰에서 Google이 차단합니다.
 
 ## 개발
-- 앱 아이콘 재생성: `swiftc -parse-as-library cwv/CWV/AppGlyph.swift cwv/make_icon.swift -o build/make_icon && build/make_icon out.png && magick out.png -alpha off cwv/CWV/Assets.xcassets/AppIcon.appiconset/icon.png` (버튼과 같은 `AppGlyph`로 그림)
+- 앱 아이콘 재생성: `swiftc -parse-as-library cwv/CWV/AppGlyph.swift cwv/make_icon.swift -o build/make_icon && build/make_icon out.png && cp out.png cwv/CWV/Assets.xcassets/AppIcon.appiconset/icon.png` (버튼과 같은 `AppGlyph`로 그림)
 - 자체 검증: `swiftc -parse-as-library cwv/CWV/Site.swift cwv/CWV/SiteStore.swift cwv/test_site.swift -o build/test_site && build/test_site`
 - 실기기 확인: Xcode에서 `cwv/CWV.xcodeproj`를 열고 Signing에 본인 Apple ID 팀을 지정한 뒤 Run.
 

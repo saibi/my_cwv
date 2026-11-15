@@ -33,6 +33,10 @@
 - `build/test_site` OK (FabCorner, adblock.json 구조 포함), 시뮬레이터 빌드 성공, 스크린샷으로 아이콘/FAB/광고 숨김 확인.
 - 미확인: 실제 드래그 스냅과 탭 메뉴가 함께 동작하는지, 홈 화면 아이콘 표시. 충돌하면 계획대로 `LongPressGesture` 후 드래그로 바꾼다.
 
+## 리뷰 반영
+- review/UXP_refine_claude-sonnet-5-5.md 참조 (R1 url-filter 호스트 고정, R2 접근성 이름, R3 검증 보강, R4 magick 제거).
+
 ## 남은 한계
+- 실기기 확인 필요: 드래그와 메뉴 탭의 공존, 재실행 후 위치 복원, VoiceOver, 대상 사이트 로그인.
 - 광고 빈 자리(래퍼 여백)가 일부 남는다. `.dm-display-frame`은 다모앙 전용 선택자다.
 - 새 광고 업체/도메인은 `adblock.json`을 직접 갱신해야 한다.
