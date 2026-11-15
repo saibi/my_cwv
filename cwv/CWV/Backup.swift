@@ -8,11 +8,13 @@ extension KeyValueBackup {
             let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                     kSecAttrService as String: "local.saibi.cwv.backup",
                                     kSecAttrAccount as String: "userdata"]
-            SecItemDelete(q as CFDictionary)
-            var add = q
-            add[kSecValueData as String] = data
-            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-            SecItemAdd(add as CFDictionary, nil)  // 실패해도 UserDefaults 저장은 유지된다
+            // 삭제 후 추가는 도중에 실패하면 기존 백업까지 잃으므로, 있으면 갱신하고 없을 때만 추가한다.
+            if SecItemUpdate(q as CFDictionary, [kSecValueData as String: data] as CFDictionary) == errSecItemNotFound {
+                var add = q
+                add[kSecValueData as String] = data
+                add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+                SecItemAdd(add as CFDictionary, nil)  // 실패해도 UserDefaults 저장은 유지된다
+            }
         },
         load: {
             let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword,

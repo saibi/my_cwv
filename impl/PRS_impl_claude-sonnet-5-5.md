@@ -39,6 +39,9 @@
 - 서명 없는 시뮬레이터 빌드(`CODE_SIGNING_ALLOWED=NO`)는 Keychain이 `errSecMissingEntitlement(-34018)`로 실패하고 앱은 UserDefaults만 쓴다 (실패해도 동작). ad hoc 서명(`CODE_SIGN_IDENTITY=-`) 빌드에서는 삭제 후 재설치 복원이 동작한다.
 - 미확인: 실기기에서 튕기기 체감, Safari에서 열기, 서명된 실기기에서 Keychain 복원, SideStore 재서명 시 복원 여부.
 
+## 리뷰 반영
+- review/PRS_refine_claude-sonnet-5-5.md 참조 (R1 Keychain 갱신, R2 복원 순서, R3 메모리 경고 후 웹뷰 유지, R4 lastSiteID 마이그레이션).
+
 ## 남은 한계
 - SideStore가 다른 Team ID/번들 ID로 재서명하면 Keychain 복원이 안 될 수 있다.
 - 주소에 쉼표가 있는 기본 페이지는 CSV에 쓸 수 없다.

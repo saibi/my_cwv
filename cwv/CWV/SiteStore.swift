@@ -42,20 +42,23 @@ final class SiteStore: ObservableObject {
         self.backup = backup
         self.defaultPages = defaultPages
         let decoder = JSONDecoder()
-        // 우선순위: UserDefaults -> Keychain 백업(앱 삭제 후 재설치) -> 이전 버전의 단일 목록(마이그레이션)
-        let data = defaults.data(forKey: "userData") ?? backup.load()
-        if let data, let u = try? decoder.decode(UserData.self, from: data) {
+        func decode(_ d: Data?) -> UserData? { d.flatMap { try? decoder.decode(UserData.self, from: $0) } }
+        var restoredLast = defaults.string(forKey: "lastSiteID").flatMap(UUID.init)
+        // 우선순위: UserDefaults -> Keychain 백업(앱 삭제 후 재설치, UserDefaults가 깨졌을 때) -> 이전 버전의 단일 목록(마이그레이션)
+        if let u = decode(defaults.data(forKey: "userData")) ?? decode(backup.load()) {
             userSites = u.userSites
             defaultZooms = u.defaultZooms
         } else if let old = defaults.data(forKey: "sites").flatMap({ try? decoder.decode([Site].self, from: $0) }) {
             let byURL = Dictionary(defaultPages.map { ($0.url, $0.id) }, uniquingKeysWith: { a, _ in a })
             userSites = old.filter { byURL[$0.url] == nil }
             defaultZooms = Dictionary(old.compactMap { s in byURL[s.url].map { ($0.uuidString, s.zoom) } }, uniquingKeysWith: { a, _ in a })
+            // 이전 기본 사이트는 임의 id였으므로, 마지막으로 연 사이트가 그것이면 새 고정 id로 바꾼다
+            if let last = old.first(where: { $0.id == restoredLast }), let new = byURL[last.url] { restoredLast = new }
         } else {
             userSites = []
             defaultZooms = [:]
         }
-        lastSiteID = defaults.string(forKey: "lastSiteID").flatMap(UUID.init)
+        lastSiteID = restoredLast
         save()  // 복원/마이그레이션 결과를 두 저장소에 맞춘다
     }
 

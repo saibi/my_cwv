@@ -135,7 +135,7 @@ enum WebCache {
     private static var views: [UUID: SiteWebView] = [:]
     private static let observer = NotificationCenter.default.addObserver(
         forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
-    ) { _ in views.removeAll() }  // ponytail: 메모리 경고 시 캐시를 비운다. 표시 중인 SiteWebView는 WebView.Coordinator가 붙잡고 있다
+    ) { _ in views = views.filter { $0.value.web.window != nil } }  // ponytail: 메모리 경고 시 보이지 않는 웹뷰만 비운다. 표시 중인 것을 남겨야 Safari에서 열기 등이 같은 웹뷰를 읽는다
 
     static func view(for site: Site) -> SiteWebView {
         _ = observer

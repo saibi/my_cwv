@@ -121,6 +121,13 @@ struct TestSite {
         let st3 = SiteStore(defaults: ud3, backup: mem, defaultPages: pages)
         assert(st3.userSites.map(\.name) == ["B", "A2"] && st3.sites[0].zoom == 3.0 && st3.lastSiteID == nil)
 
+        // UserDefaults의 userData가 깨져 있어도 정상 백업에서 복원하고, 정상 백업을 덮어쓰지 않는다 (PRS-R2)
+        let (ud6, clean6) = fresh()
+        defer { clean6() }
+        ud6.set(Data("{broken".utf8), forKey: "userData")
+        let st6 = SiteStore(defaults: ud6, backup: mem, defaultPages: pages)
+        assert(st6.userSites.map(\.name) == ["B", "A2"] && st6.sites[0].zoom == 3.0)
+
         // CSV가 바뀌어도(기본 사이트 추가/삭제) 사용자 사이트는 그대로
         let st4 = SiteStore(defaults: ud3, backup: mem, defaultPages: Array(pages.dropFirst()))
         assert(st4.sites.map(\.name) == ["news.hada.io", "제목, 쉼표 포함", "B", "A2"])
@@ -134,9 +141,10 @@ struct TestSite {
         defer { clean5() }
         var old = [Site(name: "옛 다모앙", url: url("https://damoang.net/empathy"), zoom: 1.4), Site(name: "내 사이트", url: url("https://mine.com"), zoom: 1.2)]
         ud5.set(try JSONEncoder().encode(old), forKey: "sites")
+        ud5.set(old[0].id.uuidString, forKey: "lastSiteID")  // 이전 기본 사이트를 열어 둔 상태 (PRS-R4)
         let st5 = SiteStore(defaults: ud5, backup: .none, defaultPages: pages)
         assert(st5.userSites.map(\.name) == ["내 사이트"] && st5.userSites[0].zoom == 1.2)
-        assert(st5.sites[0].zoom == 1.4)
+        assert(st5.sites[0].zoom == 1.4 && st5.lastSiteID == pages[0].id)  // 마지막 사이트도 새 고정 id로 이어진다
         old.removeAll()
 
         // JSON 왕복
