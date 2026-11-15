@@ -153,7 +153,8 @@ struct TestSite {
         st10.remove(at: IndexSet(0..<st10.sites.count))
         assert(st10.sites.isEmpty)
         assert(SiteStore(defaults: ud10, backup: .none, defaultPages: pages).sites.isEmpty)
-        // 초기화: 앱에 내장된 기본 목록으로 (글자 크기 100%)
+        // 초기화: 앱에 내장된 기본 목록으로 (글자 크기 100%, 바꾼 크기에서 시작)
+        st10.replace(with: pages.map { var s = $0; s.zoom = 2.0; return s })
         st10.reset()
         assert(st10.sites == pages && st10.sites.allSatisfy { $0.zoom == 1.0 })
         assert(SiteStore(defaults: ud10, backup: .none, defaultPages: []).sites == pages)  // 초기화 결과가 저장된다
@@ -186,6 +187,24 @@ struct TestSite {
         assert(st8.title(for: st8.sites.last!) == "b.com")
         assert(SiteStore(defaults: ud8, backup: .none, defaultPages: pages).title(for: a8) == "b.com")  // 재실행 후에도
 
+        // 초기화 때 같은 id의 주소가 달라지면 이전 사이트의 제목 캐시를 버린다 (LST-R5)
+        let (ud14, clean14) = fresh()
+        defer { clean14() }
+        let st14 = SiteStore(defaults: ud14, backup: .none, defaultPages: pages)
+        var moved = st14.sites[1]  // 자동 이름 항목(news.hada.io)의 주소를 바꾼다 (id 유지)
+        moved.url = url("https://other.example/b")
+        st14.update(moved)
+        st14.setPageTitle(moved.id, "다른 사이트 제목")
+        assert(st14.title(for: st14.sites[1]) == "다른 사이트 제목")
+        st14.setPageTitle(st14.sites[0].id, "무시")  // 주소가 그대로인 항목의 캐시는 유지돼야 한다
+        st14.setPageTitle(st14.sites[2].id, "유지될 제목")
+        st14.reset()
+        assert(st14.title(for: st14.sites[1]) == "news.hada.io")  // A 주소로 돌아왔으니 B 제목은 사라짐
+        assert(st14.title(for: st14.sites[2]) == "제목, 쉼표 포함")  // 명시 이름은 그대로, 캐시도 지우지 않음
+        st14.setPageTitle(st14.sites[1].id, "GeekNews")
+        st14.reset()
+        assert(st14.title(for: st14.sites[1]) == "GeekNews")  // 주소가 같은 항목의 캐시는 유지
+
         // 이전 형식 마이그레이션 1 (기본/사용자 분리 userData): 화면에 보이던 순서(기본 다음 사용자)를 유지하고 글자 크기를 잇는다
         func legacyData(users: [Site], zooms: [String: Double]) throws -> Data {
             try JSONSerialization.data(withJSONObject: ["userSites": JSONSerialization.jsonObject(with: JSONEncoder().encode(users)), "defaultZooms": zooms])
@@ -213,21 +232,51 @@ struct TestSite {
         ud5.set(old[0].id.uuidString, forKey: "lastSiteID")
         let st5 = SiteStore(defaults: ud5, backup: .none, defaultPages: pages)
         assert(st5.sites == old && st5.lastSiteID == old[0].id)
+        // 호스트와 같은 이름도 그대로 옮긴다 (LST-R6)
+        let (ud15, clean15) = fresh()
+        defer { clean15() }
+        ud15.set(try JSONEncoder().encode([Site(name: "mine.com", url: url("https://mine.com"))]), forKey: "sites")
+        assert(SiteStore(defaults: ud15, backup: .none, defaultPages: pages).sites.map(\.name) == ["mine.com"])
 
         // CSV 내보내기/가져오기 (LST-M3)
         let exported = exportCSV([
             Site(name: "", url: url("https://a.com/x")),
             Site(name: "제목, 쉼표", url: url("https://b.com/y?q=1")),
             Site(name: "줄\n바꿈", url: url("https://c.com")),
-            Site(name: "", url: url("https://d.com/a,b")),  // 주소의 쉼표는 %2C로
+            Site(name: "", url: url("https://d.com/a,b")),  // 주소에 쉼표가 있으면 따옴표로 감싼다
+            Site(name: "이름", url: url("https://e.com/?q=a,b&r=1")),
         ])
         assert(exported.hasPrefix("# CWV site list") && exported.hasSuffix("\n"))
-        assert(exported.contains("https://d.com/a%2Cb\n") && !exported.contains("a,b"))
+        assert(exported.contains("\n\"https://d.com/a,b\"\n") && exported.contains("\"https://e.com/?q=a,b&r=1\",이름\n"))
         guard case .success(let imp) = importCSV(Data(exported.utf8)) else { fatalError("import failed") }
-        assert(imp.sites.map(\.name) == ["", "제목, 쉼표", "줄 바꿈", ""] && imp.skipped == 0)  // 이름 왕복, 줄바꿈은 공백
-        assert(imp.sites.map { $0.url.absoluteString } == ["https://a.com/x", "https://b.com/y?q=1", "https://c.com", "https://d.com/a%2Cb"])
-        assert(importCSV(Data((exported + "ftp://bad\nhttps://a.com/x,중복\nnot a url\n").utf8)).map { $0.skipped } == .success(3))  // 잘못된 줄/중복은 건너뛰고 센다
-        assert(importCSV(Data(("\u{FEFF}" + exported).utf8)).map { $0.sites.count } == .success(4))  // BOM
+        assert(imp.sites.map(\.name) == ["", "제목, 쉼표", "줄 바꿈", "", "이름"] && imp.skipped == 0)  // 이름 왕복, 줄바꿈은 공백
+        assert(imp.sites.map { $0.url.absoluteString } == ["https://a.com/x", "https://b.com/y?q=1", "https://c.com", "https://d.com/a,b", "https://e.com/?q=a,b&r=1"])  // 쉼표 주소도 손실 없이 왕복 (LST-R4)
+        assert(importCSV(Data((exported + "ftp://bad\nhttps://a.com/x\nnot a url\n").utf8)).map { $0.skipped } == .success(3))  // 잘못된 줄과 주소+이름이 같은 줄은 건너뛰고 센다
+        assert(importCSV(Data(("\u{FEFF}" + exported).utf8)).map { $0.sites.count } == .success(5))  // BOM
+        // 따옴표 해석: 안의 ""는 ", 닫히지 않았거나 닫은 뒤 다른 글자가 오면 건너뜀
+        let q = parseDefaultPages("\"https://a.com/p?x=1,2\"\n\"https://b.com/q\"\"z\",\"제목\"\n\"https://c.com\nhttps://d.com\"x\n\"https://e.com\" , 공백 제목")
+        // 안의 ""는 "가 되고(주소에서는 %22로 인코딩), 닫히지 않은 따옴표 줄과 닫은 뒤 글자가 붙은 줄(c.com, d.com)은 건너뜀
+        assert(q.map { $0.url.absoluteString } == ["https://a.com/p?x=1,2", "https://b.com/q%22z", "https://e.com"] && q[2].name == "공백 제목")
+        // 중복 (LST-R1): 기본 목록은 주소 중복 제거, 백업 복원은 이름이 다르면 보존하고 id는 서로 다르다. 주소와 이름이 같으면 제거
+        let dupText = "https://dup.com,업무용\nhttps://dup.com,개인용\nhttps://dup.com,개인용\nhttps://dup.com\n"
+        assert(parseDefaultPages(dupText).count == 1)
+        guard case .success(let dup) = importCSV(Data(dupText.utf8)) else { fatalError("dup import failed") }
+        assert(dup.sites.map(\.name) == ["업무용", "개인용", ""] && Set(dup.sites.map(\.id)).count == 3 && dup.skipped == 1)
+        // 내보내기 제한: 가져오기와 같은 범위 (LST-R2)
+        func many(_ n: Int) -> [Site] { (0..<n).map { Site(name: "", url: url("https://s\($0).com")) } }
+        assert((try? exportCSVChecked(many(csvImportMaxLines)).get()) != nil)  // 500개는 가능
+        assert(exportCSVChecked(many(csvImportMaxLines + 1)).map { _ in 0 } == .failure(.tooManyLines))
+        let longName = String(repeating: "가", count: 40_000)  // 유니코드 3바이트 x 40000 x 10개 > 1MB
+        let big = (0..<10).map { Site(name: longName, url: url("https://b\($0).com")) }
+        assert(exportCSVChecked(big).map { _ in 0 } == .failure(.tooLarge))
+        if case .success(let okText) = exportCSVChecked(many(csvImportMaxLines)) { assert(importCSV(Data(okText.utf8)).map { $0.sites.count } == .success(csvImportMaxLines)) }  // 내보낸 500개는 복원 가능
+        // 제한된 읽기 (LST-R3): 상한을 넘는 파일도 csvImportMaxBytes+1바이트까지만 읽고 거부된다
+        let bigFile = FileManager.default.temporaryDirectory.appendingPathComponent("cwv_big_\(UUID().uuidString).csv")
+        try Data(count: csvImportMaxBytes + 5000).write(to: bigFile)
+        defer { try? FileManager.default.removeItem(at: bigFile) }
+        let limited = readLimited(bigFile)
+        assert(limited?.count == csvImportMaxBytes + 1 && importCSV(limited!).map { $0.sites.count } == .failure(.tooLarge))
+        assert(readLimited(URL(fileURLWithPath: "/nonexistent/x.csv")) == nil)
         // 제한 (신뢰할 수 없는 파일)
         assert(importCSV(Data(count: csvImportMaxBytes + 1)).map { $0.sites.count } == .failure(.tooLarge))
         assert(importCSV(Data([0xFF, 0xFE, 0x00, 0x41])).map { $0.sites.count } == .failure(.notUTF8))
@@ -239,7 +288,7 @@ struct TestSite {
         let st13 = SiteStore(defaults: ud10, backup: .none, defaultPages: pages)
         st13.setZoom(st13.sites[0].id, 2.0)
         st13.replace(with: imp.sites)
-        assert(st13.sites.map(\.name) == ["", "제목, 쉼표", "줄 바꿈", ""] && st13.sites.allSatisfy { $0.zoom == 1.0 })
+        assert(st13.sites.map(\.name) == ["", "제목, 쉼표", "줄 바꿈", "", "이름"] && st13.sites.allSatisfy { $0.zoom == 1.0 })
 
         // JSON 왕복
         let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(pages))

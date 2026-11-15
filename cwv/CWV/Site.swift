@@ -83,16 +83,43 @@ private func csvDataLines(_ text: String) -> [String] {
         .filter { !$0.isEmpty && !$0.hasPrefix("#") }
 }
 
-/// 한 줄에 `주소[,제목]`, 첫 쉼표 앞이 주소(주소에는 쉼표를 쓸 수 없다). 제목이 없으면 name은 빈 문자열
-/// (표시할 때 페이지 타이틀, 없으면 도메인). 잘못된 주소와 중복 주소는 건너뛴다.
-private func parseSites(_ lines: [String]) -> [Site] {
-    var seen = Set<UUID>()
-    return lines.compactMap { line in
+/// 한 줄을 (주소 문자열, 제목)으로 나눈다. 주소가 따옴표로 시작하면 닫는 따옴표까지가 주소(안의 ""는 "), 아니면 첫 쉼표 앞이 주소.
+/// 따옴표가 닫히지 않았거나 닫은 뒤 쉼표 말고 다른 글자가 오면 nil.
+private func splitLine(_ line: String) -> (url: String, title: String)? {
+    guard line.hasPrefix("\"") else {
         let parts = line.split(separator: ",", maxSplits: 1, omittingEmptySubsequences: false)
-        guard let url = normalizeURL(String(parts[0])) else { return nil }
-        let id = stableID(for: url)
-        guard seen.insert(id).inserted else { return nil }
-        let title = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
+        return (String(parts[0]), parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : "")
+    }
+    var url = "", i = line.index(after: line.startIndex)
+    while i < line.endIndex {
+        if line[i] == "\"" {
+            let next = line.index(after: i)
+            if next < line.endIndex, line[next] == "\"" { url.append("\""); i = line.index(after: next); continue }
+            let rest = line[next...].trimmingCharacters(in: .whitespaces)
+            if rest.isEmpty { return (url, "") }
+            guard rest.hasPrefix(",") else { return nil }
+            return (url, String(rest.dropFirst()).trimmingCharacters(in: .whitespaces))
+        }
+        url.append(line[i])
+        i = line.index(after: i)
+    }
+    return nil
+}
+
+/// 한 줄에 `주소[,제목]`. 제목이 없으면 name은 빈 문자열(표시할 때 페이지 타이틀, 없으면 도메인). 잘못된 줄은 건너뛴다.
+/// keepDuplicates가 false(기본 목록)면 같은 주소는 첫 줄만 남긴다. true(백업 복원)면 주소가 같아도 이름이 다르면 모두 남기고
+/// (주소와 이름이 모두 같은 줄만 제거) 같은 주소의 두 번째 항목부터는 새 id를 준다.
+private func parseSites(_ lines: [String], keepDuplicates: Bool = false) -> [Site] {
+    var seenIDs = Set<UUID>(), seenPairs = Set<String>()
+    return lines.compactMap { line in
+        guard let (urlText, title) = splitLine(line), let url = normalizeURL(urlText) else { return nil }
+        var id = stableID(for: url)
+        if keepDuplicates {
+            guard seenPairs.insert(url.absoluteString + "\u{0}" + title).inserted else { return nil }
+            if !seenIDs.insert(id).inserted { id = UUID() }
+        } else {
+            guard seenIDs.insert(id).inserted else { return nil }
+        }
         return Site(id: id, name: title, url: url)
     }
 }
@@ -101,10 +128,11 @@ private func parseSites(_ lines: [String]) -> [Site] {
 func parseDefaultPages(_ text: String) -> [Site] { parseSites(csvDataLines(text)) }
 
 /// 목록을 CSV로 (default_page.csv와 같은 형식, 글자 크기는 넣지 않는다). 이름이 비어 있으면 주소만 쓴다.
-/// 주소의 쉼표는 %2C로 바꿔 첫 쉼표 규칙이 깨지지 않게 하고, 이름의 줄바꿈은 공백으로 바꾼다.
+/// 주소에 쉼표나 따옴표가 있으면 주소를 따옴표로 감싸고(안의 따옴표는 두 개) 손실 없이 보존한다. 이름의 줄바꿈은 공백으로 바꾼다.
 func exportCSV(_ sites: [Site]) -> String {
     let lines = sites.map { s -> String in
-        let u = s.url.absoluteString.replacingOccurrences(of: ",", with: "%2C")
+        var u = s.url.absoluteString
+        if u.contains(",") || u.contains("\"") { u = "\"" + u.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
         let n = s.name.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespaces)
         return n.isEmpty ? u : "\(u),\(n)"
     }
@@ -121,13 +149,28 @@ struct CSVImport {
 let csvImportMaxBytes = 1_000_000
 let csvImportMaxLines = 500
 
+/// 내보내기 전 검사: 가져오기 제한(크기/줄 수)을 넘는 파일은 만들지 않는다. 백업해 놓고 복원할 수 없는 일을 막는다.
+func exportCSVChecked(_ sites: [Site]) -> Result<String, CSVImportError> {
+    guard sites.count <= csvImportMaxLines else { return .failure(.tooManyLines) }
+    let text = exportCSV(sites)
+    return text.utf8.count <= csvImportMaxBytes ? .success(text) : .failure(.tooLarge)
+}
+
+/// 파일을 최대 csvImportMaxBytes+1바이트까지만 읽는다 (크기 정보가 없거나 읽는 중 커져도 메모리를 제한).
+/// 상한을 넘으면 csvImportMaxBytes+1바이트가 돌아오고 importCSV가 tooLarge로 거부한다.
+func readLimited(_ url: URL) -> Data? {
+    guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
+    defer { try? h.close() }
+    return try? h.read(upToCount: csvImportMaxBytes + 1) ?? Data()
+}
+
 /// 가져온 CSV 파일 검사와 해석. 외부 파일이므로 크기/줄 수 제한을 두고, 각 줄은 normalizeURL로 검증한다.
 func importCSV(_ data: Data) -> Result<CSVImport, CSVImportError> {
     guard data.count <= csvImportMaxBytes else { return .failure(.tooLarge) }
     guard let text = String(data: data, encoding: .utf8) else { return .failure(.notUTF8) }
     let lines = csvDataLines(text)
     guard lines.count <= csvImportMaxLines else { return .failure(.tooManyLines) }
-    let sites = parseSites(lines)
+    let sites = parseSites(lines, keepDuplicates: true)
     guard !sites.isEmpty else { return .failure(.noValidLines) }
     return .success(CSVImport(sites: sites, skipped: lines.count - sites.count))
 }

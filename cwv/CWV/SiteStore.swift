@@ -57,7 +57,7 @@ final class SiteStore: ObservableObject {
             // 기본/사용자 분리 형식: 화면에 보이던 순서(기본 항목 다음 사용자 사이트)로 이어 붙인다
             sites = defaultPages.map { var s = $0; s.zoom = u.defaultZooms[s.id.uuidString] ?? 1.0; return s } + u.userSites.map(clean)
         } else if let old = defaults.data(forKey: "sites").flatMap({ try? decoder.decode([Site].self, from: $0) }) {
-            sites = old.map(clean)
+            sites = old  // 가장 오래된 형식은 그대로 옮긴다 (이름도 바꾸지 않는다)
         } else {
             sites = defaultPages
         }
@@ -104,6 +104,9 @@ final class SiteStore: ObservableObject {
 
     /// 목록 전체를 바꾼다 (초기화, CSV 복원). 열려 있던 웹뷰는 모두 버린다.
     func replace(with new: [Site]) {
+        // 같은 id인데 주소가 달라지는 항목(예: 기본 항목의 주소를 고쳤다가 초기화)은 이전 사이트의 제목 캐시를 버린다
+        let oldURLs = Dictionary(sites.map { ($0.id, $0.url) }, uniquingKeysWith: { a, _ in a })
+        for n in new where oldURLs[n.id] != nil && oldURLs[n.id] != n.url { pageTitles[n.id.uuidString] = nil }
         sites.forEach { WebCache.drop($0.id) }
         sites = new
     }

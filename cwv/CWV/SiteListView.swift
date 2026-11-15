@@ -14,6 +14,7 @@ struct SiteListView: View {
     @State private var exporting = false
     @State private var importing = false
     @State private var message: String?
+    @State private var exportText = ""
 
     private func row(_ site: Site) -> some View {
         Button { onOpen(site) } label: {
@@ -46,7 +47,7 @@ struct SiteListView: View {
                 ToolbarItem(placement: .topBarLeading) { EditButton() }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Menu {
-                        Button("CSV로 백업 (파일 앱에 저장)") { exporting = true }
+                        Button("CSV로 백업 (파일 앱에 저장)") { startExport() }
                         Button("CSV에서 복원 (파일 앱에서 선택)") { importing = true }
                         Divider()
                         Button("기본값으로 초기화", role: .destructive) { confirmReset = true }
@@ -55,7 +56,7 @@ struct SiteListView: View {
                 }
             }
             .sheet(item: $editing) { SiteEditView(existing: $0.existing) }
-            .fileExporter(isPresented: $exporting, document: CSVDocument(text: exportCSV(store.sites)),
+            .fileExporter(isPresented: $exporting, document: CSVDocument(text: exportText),
                           contentType: .commaSeparatedText, defaultFilename: "cwv_sites_\(Self.today)") { result in
                 switch result {
                 case .success: message = "백업했습니다. 파일 앱에서 저장한 위치를 확인하세요."
@@ -84,6 +85,23 @@ struct SiteListView: View {
         }
     }
 
+    private func describe(_ e: CSVImportError, backup: Bool) -> String {
+        switch e {
+        case .tooLarge: return backup ? "목록이 너무 커서 백업할 수 없습니다 (복원 가능한 최대 1MB)." : "파일이 너무 큽니다 (최대 1MB)."
+        case .tooManyLines: return backup ? "사이트가 너무 많아 백업할 수 없습니다 (복원 가능한 최대 \(csvImportMaxLines)개). 일부를 지운 뒤 다시 시도하세요." : "줄이 너무 많습니다 (최대 \(csvImportMaxLines)개)."
+        case .notUTF8: return "UTF-8 텍스트 파일이 아닙니다."
+        case .noValidLines: return "올바른 주소가 한 줄도 없어 목록을 바꾸지 않았습니다."
+        }
+    }
+
+    /// 복원할 수 있는 크기일 때만 파일 저장 창을 연다.
+    private func startExport() {
+        switch exportCSVChecked(store.sites) {
+        case .success(let text): exportText = text; exporting = true
+        case .failure(let e): message = describe(e, backup: true)
+        }
+    }
+
     private static var today: String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -99,17 +117,10 @@ struct SiteListView: View {
         }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        guard size <= csvImportMaxBytes, let data = try? Data(contentsOf: url) else {
-            message = size > csvImportMaxBytes ? "파일이 너무 큽니다 (최대 1MB)." : "파일을 읽지 못했습니다."
-            return
-        }
+        guard let data = readLimited(url) else { message = "파일을 읽지 못했습니다."; return }
         switch importCSV(data) {
         case .success(let imp): pendingImport = imp
-        case .failure(.tooLarge): message = "파일이 너무 큽니다 (최대 1MB)."
-        case .failure(.notUTF8): message = "UTF-8 텍스트 파일이 아닙니다."
-        case .failure(.tooManyLines): message = "줄이 너무 많습니다 (최대 \(csvImportMaxLines)개)."
-        case .failure(.noValidLines): message = "올바른 주소가 한 줄도 없어 목록을 바꾸지 않았습니다."
+        case .failure(let e): message = describe(e, backup: false)
         }
     }
 }
