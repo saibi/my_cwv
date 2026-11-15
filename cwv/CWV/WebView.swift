@@ -22,7 +22,12 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate {
         web.allowsBackForwardNavigationGestures = true
         refresh.addTarget(self, action: #selector(reload), for: .valueChanged)
         web.scrollView.refreshControl = refresh
-        web.load(URLRequest(url: base))
+        // 광고 규칙 컴파일은 비동기라 끝난 뒤에 로드한다. 실패해도 광고만 보일 뿐 페이지는 열린다.
+        AdBlock.load { [weak self] list in
+            guard let self else { return }
+            if let list { self.web.configuration.userContentController.add(list) }
+            self.web.load(URLRequest(url: self.base))
+        }
     }
 
     @objc private func reload() { web.reload() }
@@ -108,6 +113,21 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate {
         a.addAction(UIAlertAction(title: "취소", style: .cancel) { _ in completionHandler(nil) })
         a.addAction(UIAlertAction(title: "확인", style: .default) { _ in completionHandler(a.textFields?.first?.text) })
         present(a)
+    }
+}
+
+/// adblock.json(WebKit content rule)을 한 번만 컴파일해 모든 웹뷰가 공유한다.
+enum AdBlock {
+    private static var cached: WKContentRuleList?
+
+    static func load(_ done: @escaping (WKContentRuleList?) -> Void) {
+        if let cached { return done(cached) }
+        guard let url = Bundle.main.url(forResource: "adblock", withExtension: "json"),
+              let json = try? String(contentsOf: url, encoding: .utf8) else { return done(nil) }
+        WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "adblock", encodedContentRuleList: json) { list, _ in
+            cached = list
+            done(list)
+        }
     }
 }
 

@@ -46,3 +46,19 @@ func defaultSites() -> [Site] {
 func opensInSafariSheet(_ url: URL, base: URL, linkActivated: Bool) -> Bool {
     linkActivated && isExternal(url, base: base)
 }
+
+/// 플로팅 버튼이 붙는 모서리.
+enum FabCorner: String {
+    case topLeading, topTrailing, bottomLeading, bottomTrailing
+
+    /// 화면 크기 size 안의 점 p에서 가장 가까운 모서리 (화면 중심 기준 사분면).
+    static func nearest(to p: CGPoint, in size: CGSize) -> FabCorner {
+        let top = p.y < size.height / 2, leading = p.x < size.width / 2
+        switch (top, leading) {
+        case (true, true): return .topLeading
+        case (true, false): return .topTrailing
+        case (false, true): return .bottomLeading
+        case (false, false): return .bottomTrailing
+        }
+    }
+}

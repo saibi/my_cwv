@@ -1,0 +1,9 @@
+[
+  {"trigger": {"url-filter": "googlesyndication\\.com"}, "action": {"type": "block"}},
+  {"trigger": {"url-filter": "doubleclick\\.net"}, "action": {"type": "block"}},
+  {"trigger": {"url-filter": "adtrafficquality\\.google"}, "action": {"type": "block"}},
+  {"trigger": {"url-filter": "fundingchoicesmessages\\.google\\.com"}, "action": {"type": "block"}},
+  {"trigger": {"url-filter": "t1\\.daumcdn\\.net/kas/"}, "action": {"type": "block"}},
+  {"trigger": {"url-filter": ".*"}, "action": {"type": "css-display-none",
+    "selector": ".dm-display-frame, ins.adsbygoogle, iframe[id^=\"google_ads_iframe\"], ins.kakao_ad_area"}}
+]

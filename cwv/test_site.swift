@@ -35,6 +35,19 @@ struct TestSite {
         assert(clampZoom(1.0 + 0.1 + 0.1 + 0.1) == 1.3)  // 부동소수 누적 오차 보정
         assert(clampZoom(1.0) == 1.0)
 
+        // FabCorner: 사분면으로 가장 가까운 모서리
+        let scr = CGSize(width: 400, height: 800)
+        assert(FabCorner.nearest(to: CGPoint(x: 10, y: 10), in: scr) == .topLeading)
+        assert(FabCorner.nearest(to: CGPoint(x: 390, y: 10), in: scr) == .topTrailing)
+        assert(FabCorner.nearest(to: CGPoint(x: 10, y: 790), in: scr) == .bottomLeading)
+        assert(FabCorner.nearest(to: CGPoint(x: 390, y: 790), in: scr) == .bottomTrailing)
+        assert(FabCorner.nearest(to: CGPoint(x: 200, y: 400), in: scr) == .bottomTrailing)  // 정중앙은 기본 모서리
+        assert(FabCorner(rawValue: "nope") == nil)  // 저장값이 깨지면 AppStorage가 기본값을 쓴다
+
+        // adblock.json: 규칙마다 trigger/action이 있어야 WebKit이 컴파일한다
+        let rules = try JSONSerialization.jsonObject(with: Data(contentsOf: url("file://" + FileManager.default.currentDirectoryPath + "/cwv/CWV/adblock.json"))) as! [[String: Any]]
+        assert(!rules.isEmpty && rules.allSatisfy { $0["trigger"] != nil && $0["action"] != nil })
+
         // opensInSafariSheet: 직접 누른 외부 링크만 (새 창/리다이렉트/로그인 흐름은 웹뷰 유지)
         assert(opensInSafariSheet(url("https://youtube.com/x"), base: base, linkActivated: true))
         assert(!opensInSafariSheet(url("https://youtube.com/x"), base: base, linkActivated: false))

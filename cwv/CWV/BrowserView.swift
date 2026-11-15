@@ -11,12 +11,41 @@ struct BrowserView: View {
     let onClose: () -> Void
     @State private var external: ExternalLink?
 
+    @AppStorage("fabCorner") private var corner = FabCorner.bottomTrailing
+    @State private var drag = CGSize.zero
+    private let margin: CGFloat = 16, fab: CGFloat = 44
+
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            WebView(site: site) { external = ExternalLink(url: $0) }
-            menu.padding(16)
+        GeometryReader { g in
+            ZStack(alignment: alignment) {
+                WebView(site: site) { external = ExternalLink(url: $0) }
+                menu.padding(margin).offset(drag)
+                    .simultaneousGesture(DragGesture(minimumDistance: 8)
+                        .onChanged { drag = $0.translation }
+                        .onEnded { v in
+                            // 놓은 위치(버튼 중심)에서 가장 가까운 모서리로 스냅한다.
+                            let c = center(corner, in: g.size)
+                            let p = CGPoint(x: c.x + v.translation.width, y: c.y + v.translation.height)
+                            withAnimation { corner = .nearest(to: p, in: g.size); drag = .zero }
+                        })
+            }
         }
         .sheet(item: $external) { SafariView(url: $0.url).ignoresSafeArea() }
+    }
+
+    private var alignment: Alignment {
+        switch corner {
+        case .topLeading: return .topLeading
+        case .topTrailing: return .topTrailing
+        case .bottomLeading: return .bottomLeading
+        case .bottomTrailing: return .bottomTrailing
+        }
+    }
+
+    private func center(_ c: FabCorner, in size: CGSize) -> CGPoint {
+        let o = margin + fab / 2
+        let leading = c == .topLeading || c == .bottomLeading, top = c == .topLeading || c == .topTrailing
+        return CGPoint(x: leading ? o : size.width - o, y: top ? o : size.height - o)
     }
 
     private var menu: some View {
@@ -28,9 +57,10 @@ struct BrowserView: View {
             Divider()
             Button("목록으로", action: onClose)
         } label: {
-            Text("aA")
-                .font(.system(size: 16, weight: .semibold))
-                .frame(width: 44, height: 44)
+            AppGlyph()
+                .foregroundStyle(.primary)
+                .padding(10)
+                .frame(width: fab, height: fab)
                 .background(.ultraThinMaterial, in: Circle())
                 .opacity(0.85)
         }

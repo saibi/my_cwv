@@ -39,6 +39,12 @@
 - 사이트마다 광고가 다르므로 규칙은 공통 도메인 목록 + 사이트별 선택자로 시작하고, 새 사이트가 늘면 JSON에 줄을 추가한다. 모든 사이트에 항상 켜짐이며 토글은 없다 (UXP-Q4 확정). 그래서 규칙은 보수적으로 잡고(로그인/본문을 숨기지 않게), M4에서 대상 페이지의 본문/로그인이 정상인지 확인한다.
 - 한계(문서화): 광고 업체가 도메인을 바꾸거나 본문과 같은 도메인으로 서빙하면 못 막는다. 사이트 약관/수익 측면은 개인용 앱이므로 범위 밖.
 
+- **M1 조사 결과 (2026-11-15, iPhone 15 시뮬레이터 iOS 17.2, `damoang.net/empathy`)**: 페이지가 로드되며 광고 스택은 Google Publisher Tag/AdSense와 카카오 애드핏이다.
+  - 광고 도메인(요청 확인): `pagead2.googlesyndication.com`, `*.safeframe.googlesyndication.com`, `securepubads.g.doubleclick.net`, `googleads.g.doubleclick.net`, `stats.g.doubleclick.net`, `ep1.adtrafficquality.google`, `fundingchoicesmessages.google.com`(동의 팝업), `t1.daumcdn.net/kas/static/ba.min.js`(애드핏).
+  - 보이는 광고 DOM: `div.dm-display-frame`(369x104) 안의 `iframe#google_ads_iframe_/23338387889/damoang/banner-responsive_article_0`(320x100). `ins.adsbygoogle`, `iframe[id^=google_ads_iframe]`도 같은 광고다.
+  - 트래커(`clarity.ms`, `googletagmanager.com`, `analytics.google.com`)는 광고가 아니라 이번 범위에서 제외한다.
+  - WebKit content rule은 url-filter에 `|` 선택(alternation)을 못 쓰므로 도메인마다 규칙을 따로 둔다.
+
 ## 4. 공통 모듈
 - `AppGlyph` (SwiftUI 뷰): 앱 아이콘과 FAB가 공유. 파일은 `cwv/CWV/AppGlyph.swift`.
 - `FabCorner`: 순수 로직, `Site.swift`.

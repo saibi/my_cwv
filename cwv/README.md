@@ -4,11 +4,13 @@
 
 ## 사용
 - 목록: `+` 추가, 행을 왼쪽으로 밀면 편집/삭제, `편집` 버튼으로 순서 변경.
-- 웹뷰: 오른쪽 아래 `aA` 버튼에서 글자 크기(50~300%), `목록으로`. 가장자리 스와이프로 뒤로/앞으로, 당겨서 새로고침.
+- 웹뷰: 말풍선 모양 플로팅 버튼(기본 오른쪽 아래)에서 글자 크기(50~300%), `목록으로`. 버튼을 끌어 놓으면 가까운 모서리로 붙고 위치는 저장됩니다. 가장자리 스와이프로 뒤로/앞으로, 당겨서 새로고침.
 - 다른 도메인 링크는 앱 안의 Safari 시트로 열립니다 (시트 하단 "Safari에서 열기"로 Safari 앱 이동 가능).
+- 광고(Google 광고, 카카오 애드핏)는 `cwv/CWV/adblock.json` 규칙으로 차단/숨깁니다. 사이트가 늘면 이 파일에 도메인이나 선택자를 추가하세요.
 - Google 소셜 로그인은 내장 웹뷰에서 Google이 차단합니다.
 
 ## 개발
+- 앱 아이콘 재생성: `swiftc -parse-as-library cwv/CWV/AppGlyph.swift cwv/make_icon.swift -o build/make_icon && build/make_icon out.png && magick out.png -alpha off cwv/CWV/Assets.xcassets/AppIcon.appiconset/icon.png` (버튼과 같은 `AppGlyph`로 그림)
 - 자체 검증: `swiftc -parse-as-library cwv/CWV/Site.swift cwv/CWV/SiteStore.swift cwv/test_site.swift -o build/test_site && build/test_site`
 - 실기기 확인: Xcode에서 `cwv/CWV.xcodeproj`를 열고 Signing에 본인 Apple ID 팀을 지정한 뒤 Run.
 
