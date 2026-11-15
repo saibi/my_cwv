@@ -6,3 +6,7 @@ xcuserdata/
 *.p12
 *.mobileprovision
 .env
+
+# 개인 기본 페이지 목록 (견본: cwv/default_page.csv.example)
+default_page.csv
+*.swp

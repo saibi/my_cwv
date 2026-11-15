@@ -24,7 +24,11 @@
 - 순수 로직 `FabCorner.nearest`는 그대로 두고, 예측 위치를 넘기는 방식이라 단위 테스트는 기존 것으로 충분하다. 체감은 실기기에서 확인하고 필요하면 예측 이동량에 배수를 곱한다.
 
 ### 2) 기본 페이지 CSV
-- 파일: `cwv/CWV/default_page.csv` (번들 리소스, 폴더 동기화 그룹이라 `project.pbxproj` 수정 불필요).
+- 파일: `cwv/CWV/default_page.csv` (번들 리소스, 폴더 동기화 그룹이라 리소스 등록은 불필요). **git에 올리지 않는다** (개인 목록): `.gitignore`에 `default_page.csv`(어느 폴더든)와 `*.swp`를 추가한다.
+- 형식 안내용 견본 `cwv/default_page.csv.example`은 커밋한다 (아래 형식 설명과 예시 포함). 처음 쓰는 사람은 이를 `cwv/CWV/default_page.csv`로 복사해 고친다.
+- 파일이 없을 때 (PRS-Q5 확정):
+  - 빌드 전 안내: Xcode 빌드 단계(Run Script, `alwaysOutOfDate`)에서 `cwv/CWV/default_page.csv`가 없으면 `warning:` 줄로 안내하고 빌드는 계속한다. 문구에는 파일을 먼저 만들어야 한다는 말, 형식 설명(한 줄에 `주소[,제목]`, `#` 주석, 제목 생략 시 도메인), 견본 복사 명령(`cp cwv/default_page.csv.example cwv/CWV/default_page.csv`)을 넣는다. Xcode, xcodebuild, `make_ipa.sh` 모두 같은 빌드 단계를 거쳐 안내된다. 빌드 단계는 `project.pbxproj`에 추가한다.
+  - 앱 동작: 파일이 없거나 유효한 줄이 하나도 없으면 기본 목록 대신 항상 접속 가능한 `Google (https://www.google.com)` 한 개를 쓴다 (`Site.swift`의 `parseDefaultPages` 결과가 비면 대체). 코드에는 이 대체값만 남고 특정 커뮤니티 주소는 없다.
 - 형식 (한 줄에 사이트 하나):
   ```
   # 주석(#으로 시작)과 빈 줄은 무시
@@ -58,8 +62,8 @@
 - 새 Keychain 래퍼는 `Backup.swift` 한 파일, 함수 두 개(`save(Data)`, `load() -> Data?`).
 
 ## 5. 구현 구조
-- 신규: `cwv/CWV/default_page.csv`, `cwv/CWV/Backup.swift`. 사용자가 저장소 루트에 만들어 둔 `default_page.csv`(주소 4개, 제목 열 없음)는 앱에 번들되려면 `cwv/CWV/` 안에 있어야 하므로 구현 때 그 위치로 옮긴다 (루트의 복사본은 남기지 않는다).
-- 수정: `BrowserView.swift`(predictedEndTranslation, Safari에서 열기 메뉴 항목), `Site.swift`, `SiteStore.swift`, `SiteListView.swift`(기본 사이트 행은 삭제/편집/이동 불가, 사용자 사이트 구역만 편집 가능; PRS-Q1), `test_site.swift`, `cwv/README.md`(CSV 편집법, 재설치 시 유지 범위)
+- 신규: `cwv/CWV/default_page.csv`, `cwv/CWV/Backup.swift`. 사용자가 저장소 루트에 만들어 둔 `default_page.csv`(주소 4개, 제목 열 없음)는 앱에 번들되려면 `cwv/CWV/` 안에 있어야 하므로 구현 때 그 위치로 옮긴다 (루트의 복사본은 남기지 않는다). 이 파일은 git에 올리지 않는다. 신규 커밋 파일은 `cwv/default_page.csv.example`.
+- 수정: `BrowserView.swift`(predictedEndTranslation, Safari에서 열기 메뉴 항목), `Site.swift`, `SiteStore.swift`, `project.pbxproj`(경고용 빌드 단계. 로컬 Team ID 변경이 섞여 있으므로 커밋할 때 이 변경 줄만 골라 넣는다), `.gitignore`, `SiteListView.swift`(기본 사이트 행은 삭제/편집/이동 불가, 사용자 사이트 구역만 편집 가능; PRS-Q1), `test_site.swift`, `cwv/README.md`(CSV 편집법, 재설치 시 유지 범위)
 - 새 의존성 없음.
 
 ## 6. 결정 사항
@@ -75,3 +79,4 @@
 | PRS-M2 | 튕기기 | 시뮬레이터 빌드 성공, 실기기에서 짧게 튕겨도 그 방향 모서리로 이동 |
 | PRS-M3 | Keychain 백업/복원 | 시뮬레이터에서 앱 삭제 후 재설치해 사용자 사이트 복원, 가능하면 실기기에서도 확인 |
 | PRS-M4 | Safari에서 열기 | `build/test_site`의 `safariTarget` 통과, 실기기에서 글 상세로 이동한 뒤 항목을 누르면 Safari에 그 글이 열림 |
+| PRS-M5 | 기본 파일 없음 처리 | 파일을 치운 채 빌드하면 경고가 보이고 빌드가 성공하며, 앱 첫 화면 목록이 Google 하나. 파일을 두면 경고 없이 CSV 목록 |
