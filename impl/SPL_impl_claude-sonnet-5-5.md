@@ -16,13 +16,16 @@
 ## 핵심 설계 결정
 - `NavigationSplitView` 대신 `HStack`으로 직접 배치 - 계획 전제 확인대로 SwiftUI는 사이드바를 오른쪽에 둘 수 없고, 사용자가 바꾼 너비를 저장/제어할 수 없다.
 - 설정은 `@AppStorage`(키는 `SidebarKey`) - `fabCorner`와 같은 방식. 복원은 같은 키를 `UserDefaults`에 직접 써도 `@AppStorage`가 따라간다.
-- 드래그는 전역 좌표 기준 + 드래그 중 임시값(`dragWidth`), 끝날 때만 저장 - 경계가 움직이면서 로컬 좌표 변화량이 튀는 것과 매 프레임 저장을 피한다. 드래그 시작 값은 저장값이 아니라 `clampSidebarWidth`로 줄어든 표시 너비라서 창이 좁을 때 시작 순간 튀지 않는다.
-- 사이트가 바뀔 때 `BrowserView.id(site.id)` - `WebView`의 Coordinator가 처음 사이트의 웹뷰 보유자를 들고 있어, id 없이 사이트만 바꾸면 이전 사이트 웹뷰가 계속 보인다.
+- 드래그는 전역 좌표 기준 + 드래그 중 임시값(`dragWidth`), 끝날 때(`@GestureState`가 false가 될 때, 취소 포함)만 저장 - 경계가 움직이면서 로컬 좌표 변화량이 튀는 것과 매 프레임 저장을 피한다. 시작 너비(`dragStart`)는 한 번만 잡고 누적 이동량을 더한다 (기준을 매번 `dragWidth`로 읽으면 이동량이 중복된다, SPL-R2). 기준은 `clampSidebarWidth`로 줄어든 표시 너비라서 창이 좁을 때 시작 순간 튀지 않는다.
+- `BrowserView.id(ObjectIdentifier(WebCache.view(for: site)))` - `WebView`의 Coordinator가 처음 웹뷰 보유자를 들고 있어, 사이트를 바꾸거나 캐시의 웹뷰가 교체(주소 편집, 초기화/복원)돼도 화면이 이전 웹뷰를 계속 보인다 (리뷰 SPL-R1에서 `site.id`만으로는 부족함이 드러나 변경).
+- 좌우 순서는 `ForEach(order, id:)`로 그린다 - 위치로 뷰를 구분하면 옵션에서 위치를 바꿀 때 목록이 새로 만들어져 옵션 시트가 닫힌다 (SPL-R3).
 - 고른 사이트가 없으면 목록은 숨겨지지 않고 숨기기 버튼도 없다 - 다시 열 길(플로팅 메뉴)이 없어서.
 
 ## 진행 기록
 - SPL-M1: `clampSidebarWidth`/`SidebarLayout`/`csvHeader`/`csvSidebar`/`exportCSV(layout:)`를 `build/test_site`에 검증 추가 (범위, 창 축소, 헤더 왕복, 잘못된 값 무시, 범위 자르기, 데이터 줄 뒤 헤더 무시, `load/apply`). 통과.
 - SPL-M2: iPad Pro 11 시뮬레이터 빌드와 실행. 왼쪽/오른쪽 배치, 선택 행 강조, 숨김(전체 폭) 스크린샷 확인. iPhone 시뮬레이터에서는 기존처럼 사이트가 전체 화면으로 열리는 것을 확인.
+
+- 리뷰(codex) 반영: R1~R5 (review/SPL_refine_claude-sonnet-5-5.md). 경계에 VoiceOver 조절 동작(R4)을 추가했다.
 
 ## 계획 대비 변경
 | 항목 | 계획 | 최종 구현 | 상황과 근본 이유 |
@@ -37,4 +40,5 @@
 
 ## 남은 한계
 - 분할 화면에서도 웹 영역은 사이트 하나뿐이다 (다중 웹 영역은 범위 밖).
+- 크기 등급이 regular에서 compact로 바뀌면 목록 뷰가 새로 만들어져, 열려 있던 옵션/편집 시트와 파일 선택/복원 확인 상태는 닫힌다 (SPL-R3 중 이 부분은 상태를 `RootView`로 올려야 해서 하지 않음).
 - 사이드바를 오른쪽에 두면 가장자리 스와이프로 목록을 다시 열 수 없다 (플로팅 메뉴로만).

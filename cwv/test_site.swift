@@ -407,11 +407,16 @@ struct TestSite {
         assert(csvSidebar("# sidebar-width: abc\n# sidebar-width: 300\n# SIDEBAR-SIDE: Trailing\nhttps://a.com") == SidebarLayout.Partial(side: .trailing, width: 300, hidden: nil))  // 잘못된 값은 건너뛰고 대소문자 무시
         assert(csvSidebar("https://a.com\n# sidebar-side: trailing").isEmpty)  // 데이터 줄 뒤의 헤더는 무시
         assert(exportCSV(lay, layout: SidebarLayout(side: .leading, width: 9999, hidden: false)).contains("# sidebar-width: 480\n"))
+        assert(csvSidebar(sv).summary == "위치, 너비, 숨김" && csvSidebar("# sidebar-hidden: 1\nhttps://a.com").summary == "숨김" && SidebarLayout.Partial().summary == "")  // 확인창 안내 (SPL-R5)
+        guard case .success(let plain) = importCSV(Data(exportCSV(lay, device: .ipad).utf8)) else { fatalError() }
+        assert(svi.sites == plain.sites)  // 레이아웃 헤더가 있어도 사이트의 모든 필드 해석이 같다
         let (ud18, clean18) = fresh()
         defer { clean18() }
         assert(SidebarLayout.load(ud18) == SidebarLayout())  // 기본값
         SidebarLayout.apply(SidebarLayout.Partial(side: .trailing, width: nil, hidden: true), to: ud18)
         assert(SidebarLayout.load(ud18) == SidebarLayout(side: .trailing, width: 320, hidden: true))  // 있는 키만 바뀐다
+        SidebarLayout.apply(SidebarLayout.Partial(side: nil, width: 400, hidden: nil), to: ud18)
+        assert(SidebarLayout.load(ud18) == SidebarLayout(side: .trailing, width: 400, hidden: true))  // 너비 쓰기/읽기 (SPL-R 리뷰: 빠져 있던 경로)
 
         // JSON 왕복
         let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(pages))

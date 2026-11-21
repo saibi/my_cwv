@@ -100,7 +100,7 @@ struct SiteListView: View {
                 Button("취소", role: .cancel) {}
             } message: { imp in
                 Text((foreign(imp) ? "\(imp.device == .ipad ? "iPad" : "iPhone")에서 백업한 파일입니다. 사이트별 데스크톱 설정이 이 기기에도 적용됩니다. " : "")
-                     + (appliesSidebar(imp) ? "분할 화면의 목록 위치/너비도 파일 값으로 바뀝니다. " : "")
+                     + (appliesSidebar(imp) ? "분할 화면의 목록 설정(\(imp.sidebar.summary))도 파일 값으로 바뀝니다. " : "")
                      + "현재 목록 \(store.sites.count)개가 파일의 \(imp.sites.count)개로 바뀝니다." + (imp.skipped > 0 ? " (잘못된 주소 또는 중복 \(imp.skipped)줄은 건너뜀)" : "") + " 확대%는 파일에 적힌 값(없으면 기본 확대% \(Int((store.defaultZoom * 100).rounded()))%)이 됩니다.")
             }
             .alert("알림", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {

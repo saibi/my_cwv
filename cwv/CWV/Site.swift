@@ -96,6 +96,8 @@ struct SidebarLayout: Equatable {
         var width: Double?
         var hidden: Bool?
         var isEmpty: Bool { side == nil && width == nil && hidden == nil }
+        /// 적용될 항목 이름 (복원 확인창 안내용).
+        var summary: String { [side == nil ? nil : "위치", width == nil ? nil : "너비", hidden == nil ? nil : "숨김"].compactMap { $0 }.joined(separator: ", ") }
     }
 
     static func load(_ d: UserDefaults = .standard) -> SidebarLayout {
