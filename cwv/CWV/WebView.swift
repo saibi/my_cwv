@@ -1,6 +1,25 @@
 import SwiftUI
 import WebKit
 import SafariServices
+import UIKit.UIGestureRecognizerSubclass
+
+/// 웹뷰 자신의 왼쪽/오른쪽 가장자리에서 시작하는 팬 (분할 화면의 뒤로/앞으로, SWB).
+/// 시작 조건이 안 맞으면 touchesBegan에서 바로 실패해 웹뷰의 스크롤과 링크 탭을 지연시키지 않는다.
+/// 웹뷰의 그쪽 끝이 화면 끝이면 WebKit 기본 제스처가 처리하므로 실패한다 (이중 이동 방지).
+final class PaneEdgePan: UIPanGestureRecognizer {
+    private(set) var startX = 0.0
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesBegan(touches, with: event)
+        guard let web = view as? WKWebView, let t = touches.first else { state = .failed; return }
+        startX = t.location(in: web).x
+        let frame = web.convert(web.bounds, to: nil)
+        let screenW = web.window?.bounds.width ?? frame.maxX
+        let back = web.canGoBack && startX <= paneSwipeEdge && frame.minX > 1
+        let forward = web.canGoForward && startX >= web.bounds.width - paneSwipeEdge && screenW - frame.maxX > 1
+        if !(back || forward) { state = .failed }
+    }
+}
 
 /// 사이트 하나의 WKWebView와 delegate. 목록에 다녀와도 페이지와 스크롤이 유지되도록 캐시한다.
 final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate, UIGestureRecognizerDelegate {
@@ -33,6 +52,11 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate, UIGesture
         edge.edges = .left
         edge.delegate = self
         web.addGestureRecognizer(edge)
+        // 분할 화면처럼 웹뷰 끝이 화면 끝이 아닐 때는 WebKit 기본 뒤로/앞으로 제스처가 닿지 않아 웹뷰 가장자리에서 직접 받는다 (SWB).
+        let pane = PaneEdgePan(target: self, action: #selector(panePan(_:)))
+        pane.maximumNumberOfTouches = 1
+        pane.delegate = self
+        web.addGestureRecognizer(pane)
         // 첫 페이지(웹 기록 없음)의 타이틀만 목록 이름 후보로 보고한다. 글 상세 제목이 사이트 이름이 되지 않게.
         titleObs = web.observe(\.title) { [weak self] _, _ in self?.reportTitle() }
         refresh.addTarget(self, action: #selector(reload), for: .valueChanged)
@@ -52,7 +76,23 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate, UIGesture
         if shouldCloseOnEdgeSwipe(translation: g.translation(in: g.view).x, velocity: g.velocity(in: g.view).x) { onBack?() }
     }
 
-    func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool { !web.canGoBack }
+    @objc private func panePan(_ g: PaneEdgePan) {
+        guard g.state == .ended else { return }
+        let p = g.translation(in: web), v = g.velocity(in: web)
+        let frame = web.convert(web.bounds, to: nil)
+        switch paneSwipe(startX: g.startX, viewWidth: web.bounds.width, viewMinX: frame.minX, screenWidth: Double(web.window?.bounds.width ?? frame.maxX),
+                         dx: p.x, dy: p.y, vx: v.x) {
+        case .back?: if web.canGoBack { web.goBack() }
+        case .forward?: if web.canGoForward { web.goForward() }
+        case nil: break
+        }
+    }
+
+    func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+        // 가장자리 팬은 가로가 우세할 때만 시작한다 (세로면 스크롤에 양보)
+        if g is PaneEdgePan { let v = (g as! UIPanGestureRecognizer).velocity(in: web); return abs(v.x) > abs(v.y) }
+        return !web.canGoBack
+    }
 
     /// 콜백이 늦게 붙거나 캐시된 웹뷰가 다시 표시될 때도 호출한다. 뷰 갱신 중 상태를 바꾸지 않도록 다음 런루프에서 전달한다.
     func reportTitle() {

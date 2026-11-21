@@ -152,6 +152,21 @@ func shouldCloseOnEdgeSwipe(translation: Double, velocity: Double) -> Bool {
     translation > 80 || velocity > 500
 }
 
+/// 분할 화면에서 웹 영역 가장자리 스와이프의 결과 (SWB).
+enum PaneSwipe { case back, forward }
+let paneSwipeEdge = 24.0
+
+/// 웹뷰 자신의 가장자리(24pt)에서 시작한 가로 스와이프를 뒤로/앞으로로 해석한다.
+/// 웹뷰의 그쪽 끝이 화면(창) 끝에 닿아 있으면 WebKit 기본 제스처가 이미 처리하므로 nil (이중 이동 방지).
+/// 이동량/속도 기준은 shouldCloseOnEdgeSwipe와 같다. startX는 웹뷰 안의 x, viewMinX/screenWidth는 창 좌표.
+func paneSwipe(startX: Double, viewWidth: Double, viewMinX: Double, screenWidth: Double, dx: Double, dy: Double, vx: Double) -> PaneSwipe? {
+    guard abs(dx) > abs(dy) else { return nil }
+    let atLeft = viewMinX <= 1, atRight = screenWidth - (viewMinX + viewWidth) <= 1
+    if dx > 0, startX <= paneSwipeEdge, !atLeft, shouldCloseOnEdgeSwipe(translation: dx, velocity: vx) { return .back }
+    if dx < 0, startX >= viewWidth - paneSwipeEdge, !atRight, shouldCloseOnEdgeSwipe(translation: -dx, velocity: -vx) { return .forward }
+    return nil
+}
+
 let zoomRange = 0.5...3.0
 
 func clampZoom(_ z: Double) -> Double {

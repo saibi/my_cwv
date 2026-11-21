@@ -178,13 +178,14 @@ private struct VersionLabel: View {
 
     var body: some View {
         if let version {
-            let label = Text("v\(version)").font(.caption).foregroundStyle(.secondary)
+            let label = Text("v\(version)").font(.caption.weight(.medium)).foregroundStyle(Color(.label).opacity(0.7))  // 흐려서 안 보인다는 지적(SWB)으로 .secondary에서 진하게
             if let built, !built.isEmpty {
                 Button { showBuild = true } label: { label }
                     .buttonStyle(.plain)
                     .popover(isPresented: $showBuild) {
-                        Text("빌드 \(built)").font(.system(size: 10)).foregroundStyle(.secondary).padding(8)
+                        Text("빌드 \(built)").font(.system(size: 10, weight: .medium)).foregroundStyle(.white).padding(8)
                             .presentationCompactAdaptation(.popover)
+                            .presentationBackground(Color.accentColor)  // 눌러야 보이는 요소라 배경과 확실히 구분되는 색 (SWB-Q1)
                     }
             } else { label }
         }

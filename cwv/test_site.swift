@@ -418,6 +418,23 @@ struct TestSite {
         SidebarLayout.apply(SidebarLayout.Partial(side: nil, width: 400, hidden: nil), to: ud18)
         assert(SidebarLayout.load(ud18) == SidebarLayout(side: .trailing, width: 400, hidden: true))  // 너비 쓰기/읽기 (SPL-R 리뷰: 빠져 있던 경로)
 
+        // SWB: 분할 화면 가장자리 스와이프 (목록 왼쪽: 웹 x 332...1194, 화면 폭 1194)
+        func ps(_ sx: Double, minX: Double = 332, w: Double = 862, dx: Double, dy: Double = 5, vx: Double = 0) -> PaneSwipe? {
+            paneSwipe(startX: sx, viewWidth: w, viewMinX: minX, screenWidth: 1194, dx: dx, dy: dy, vx: vx)
+        }
+        assert(ps(10, dx: 120) == .back && ps(24, dx: 120) == .back)  // 왼쪽 가장자리에서 오른쪽으로 = 뒤로
+        assert(ps(30, dx: 120) == nil)  // 가장자리 밖에서 시작
+        assert(ps(10, minX: 0, w: 1194, dx: 120) == nil)  // 웹뷰가 화면 왼쪽 끝이면 WebKit 기본 제스처 (이중 이동 방지)
+        assert(ps(10, dx: 30) == nil && ps(10, dx: 30, vx: 600) == .back)  // 이동량 또는 속도 기준
+        assert(ps(10, dx: -120) == nil)  // 왼쪽 가장자리에서 왼쪽으로는 아무것도 아님
+        assert(ps(10, dx: 100, dy: 200) == nil)  // 세로 우세는 스크롤
+        // 앞으로: 웹 오른쪽 끝이 화면 끝이 아닐 때만 (목록이 오른쪽: 웹 x 0...862)
+        assert(ps(850, minX: 0, dx: -120, vx: -300) == .forward && ps(838, minX: 0, dx: -120) == .forward)
+        assert(ps(830, minX: 0, dx: -120) == nil)  // 가장자리 밖
+        assert(ps(850, dx: -120) == nil)  // 웹 오른쪽 끝이 화면 끝(목록 왼쪽)이면 기본 제스처
+        assert(ps(850, minX: 0, dx: 120) == nil && ps(850, minX: 0, dx: -30) == nil && ps(850, minX: 0, dx: -30, vx: -600) == .forward)
+        assert(ps(850, minX: 0, dx: -100, dy: 200) == nil)
+
         // JSON 왕복
         let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(pages))
         assert(back == pages)
