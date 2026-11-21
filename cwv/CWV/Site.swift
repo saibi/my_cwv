@@ -396,9 +396,33 @@ func opensInSafariSheet(_ url: URL, base: URL, linkActivated: Bool) -> Bool {
     linkActivated && isExternal(url, base: base)
 }
 
+/// 플로팅 버튼을 눌러 끌었다가 뗄 때의 동작 (JOY). 왼쪽=뒤로, 오른쪽=앞으로, 위=글자 크게, 아래=글자 작게, 멀리=모서리 이동.
+enum FabAction: Equatable { case none, back, forward, zoomIn, zoomOut, move }
+
+/// 약 1cm에 해당하는 pt. 기기 화면 밀도 기준 근사값 (iPhone 약 60pt, iPad 약 52pt).
+func joystickDistance(isPad: Bool) -> Double { isPad ? 52 : 60 }
+
+/// 손을 뗀 위치(시작부터의 이동량 dx, dy)로 동작을 정한다. 튕기는 속도는 쓰지 않는다.
+/// move 이상이면 모서리 이동, 최대축 이동이 joystick 미만이면(돌아온 경우 포함) 없음, 그 사이는 더 많이 움직인 축이 방향.
+func fabAction(dx: Double, dy: Double, joystick: Double, move: Double) -> FabAction {
+    if hypot(dx, dy) >= move { return .move }
+    guard max(abs(dx), abs(dy)) >= joystick else { return .none }
+    if abs(dx) >= abs(dy) { return dx < 0 ? .back : .forward }
+    return dy < 0 ? .zoomIn : .zoomOut
+}
+
 /// 플로팅 버튼이 붙는 모서리.
-enum FabCorner: String {
+enum FabCorner: String, CaseIterable {
     case topLeading, topTrailing, bottomLeading, bottomTrailing
+
+    var title: String {
+        switch self {
+        case .topLeading: return "왼쪽 위"
+        case .topTrailing: return "오른쪽 위"
+        case .bottomLeading: return "왼쪽 아래"
+        case .bottomTrailing: return "오른쪽 아래"
+        }
+    }
 
     /// 화면 크기 size 안의 점 p에서 가장 가까운 모서리 (화면 중심 기준 사분면).
     static func nearest(to p: CGPoint, in size: CGSize) -> FabCorner {

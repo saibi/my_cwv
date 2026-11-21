@@ -441,6 +441,17 @@ struct TestSite {
         assert(paneSwipeStarts(canBack: true, canForward: true, dx: 10, dy: 0) && paneSwipeStarts(canBack: true, canForward: true, dx: -10, dy: 0))
         assert(paneSwipeStarts(canBack: true, canForward: false, dx: 10, dy: 5) && !paneSwipeStarts(canBack: true, canForward: false, dx: 8, dy: 8))  // 대각선은 스크롤에 양보
 
+        // JOY: 플로팅 버튼 조이스틱 (1cm = 60pt, 모서리 이동 = 180pt 가정)
+        func fa(_ dx: Double, _ dy: Double) -> FabAction { fabAction(dx: dx, dy: dy, joystick: 60, move: 180) }
+        assert(fa(-61, 5) == .back && fa(61, -5) == .forward && fa(5, -61) == .zoomIn && fa(-5, 61) == .zoomOut)  // 방향 (왼쪽 뒤로, 오른쪽 앞으로, 위 크게, 아래 작게)
+        assert(fa(-59, 0) == .none && fa(0, -59) == .none && fa(0, 0) == .none && fa(10, -10) == .none)  // 1cm 미만, 돌아온 경우
+        assert(fa(-60, 0) == .back && fa(0, 60) == .zoomOut)  // 경계는 포함
+        assert(fa(-40, -61) == .zoomIn && fa(-70, -70) == .back && fa(70, 70) == .forward)  // 대각선: 더 많이 움직인 축, 같으면 가로
+        assert(fa(179, 0) == .forward && fa(180, 0) == .move && fa(130, 130) == .move && fa(100, 100) == .forward)  // 모서리 이동 경계 (거리 기준)
+        assert(fa(-180, 0) == .move && fa(0, -200) == .move)
+        assert(joystickDistance(isPad: true) == 52 && joystickDistance(isPad: false) == 60)
+        assert(FabCorner.allCases.count == 4 && Set(FabCorner.allCases.map(\.title)).count == 4)
+
         // JSON 왕복
         let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(pages))
         assert(back == pages)
