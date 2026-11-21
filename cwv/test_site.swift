@@ -390,6 +390,29 @@ struct TestSite {
         guard case .success(let lay2) = importCSV(Data("# v3\nhttps://g.com,\"G\",120,m\nhttps://g.com,\"G\",120,d\nhttps://g.com,\"G\",120,d\n".utf8)) else { fatalError() }
         assert(lay2.sites.map(\.desktop) == [false, true] && lay2.skipped == 1)
 
+        // SPL: 사이드바 너비 범위 (SPL-Q4)
+        assert(clampSidebarWidth(320, total: 1000) == 320 && clampSidebarWidth(100, total: 1000) == 240 && clampSidebarWidth(9999, total: 2000) == 480)
+        assert(clampSidebarWidth(480, total: 800) == 400 && clampSidebarWidth(320, total: 500) == 250)  // 창이 줄면 표시만 줄인다
+        assert(clampSidebarWidth(320, total: 300) == 240)  // 아주 좁아도 최소는 지킨다
+        // SPL: 레이아웃 헤더 왕복, 잘못된 값 무시, 범위 자르기 (SPL-Q5)
+        let sl = SidebarLayout(side: .trailing, width: 360, hidden: true)
+        let sv = exportCSV(lay, device: .ipad, layout: sl)
+        assert(sv.hasPrefix("# v3\n# device: ipad\n# sidebar-side: trailing\n# sidebar-width: 360\n# sidebar-hidden: 1\n"))
+        assert(csvSidebar(sv) == SidebarLayout.Partial(side: .trailing, width: 360, hidden: true))
+        guard case .success(let svi) = importCSV(Data(sv.utf8)) else { fatalError() }
+        assert(svi.sidebar == csvSidebar(sv) && svi.sites.map(\.desktop) == [true, false] && svi.device == .ipad)  // 헤더가 있어도 사이트 해석은 같다
+        assert(!exportCSV(lay, device: .ipad).contains("sidebar") && csvSidebar(exportCSV(lay, device: .ipad)).isEmpty)  // layout nil이면 헤더 없음
+        assert(csvSidebar("# sidebar-side: middle\n# sidebar-width: abc\n# sidebar-hidden: 2\nhttps://a.com").isEmpty)
+        assert(csvSidebar("# sidebar-width: 100\nhttps://a.com").width == 240 && csvSidebar("# sidebar-width: 9999\nhttps://a.com").width == 480)
+        assert(csvSidebar("# sidebar-width: abc\n# sidebar-width: 300\n# SIDEBAR-SIDE: Trailing\nhttps://a.com") == SidebarLayout.Partial(side: .trailing, width: 300, hidden: nil))  // 잘못된 값은 건너뛰고 대소문자 무시
+        assert(csvSidebar("https://a.com\n# sidebar-side: trailing").isEmpty)  // 데이터 줄 뒤의 헤더는 무시
+        assert(exportCSV(lay, layout: SidebarLayout(side: .leading, width: 9999, hidden: false)).contains("# sidebar-width: 480\n"))
+        let (ud18, clean18) = fresh()
+        defer { clean18() }
+        assert(SidebarLayout.load(ud18) == SidebarLayout())  // 기본값
+        SidebarLayout.apply(SidebarLayout.Partial(side: .trailing, width: nil, hidden: true), to: ud18)
+        assert(SidebarLayout.load(ud18) == SidebarLayout(side: .trailing, width: 320, hidden: true))  // 있는 키만 바뀐다
+
         // JSON 왕복
         let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(pages))
         assert(back == pages)

@@ -8,6 +8,9 @@ private struct EditTarget: Identifiable {
 struct SiteListView: View {
     @EnvironmentObject var store: SiteStore
     let onOpen: (Site) -> Void
+    var selectedID: UUID?  // 분할 화면에서 지금 열린 사이트 (강조)
+    var onHide: (() -> Void)?  // 분할 화면의 목록 숨기기 버튼
+    @AppStorage(SidebarKey.side) private var side = SidebarSide.leading
     @State private var editing: EditTarget?
     @State private var confirmReset = false
     @State private var pendingImport: CSVImport?
@@ -22,6 +25,14 @@ struct SiteListView: View {
         imp.device != nil && imp.device != Self.device && imp.sites.contains { $0.desktop }
     }
 
+    /// iPad에서 복원할 때만 파일의 분할 화면 설정을 적용한다 (iPhone에는 그 설정이 없다).
+    private func appliesSidebar(_ imp: CSVImport) -> Bool { Self.device == .ipad && !imp.sidebar.isEmpty }
+
+    private func restore(_ imp: CSVImport, sites: [Site]) {
+        store.replace(with: sites)
+        if appliesSidebar(imp) { SidebarLayout.apply(imp.sidebar) }
+    }
+
     private func delete(_ site: Site) {
         if let i = store.sites.firstIndex(of: site) { store.remove(at: [i]) }
     }
@@ -31,6 +42,7 @@ struct SiteListView: View {
             List {
                 ForEach(store.sites) { site in
                     SiteRow(site: site, onOpen: onOpen, onEdit: { editing = EditTarget(existing: site) })
+                        .listRowBackground(site.id == selectedID ? Color.accentColor.opacity(0.18) : nil)
                         .contextMenu {
                             Button("편집", systemImage: "pencil") { editing = EditTarget(existing: site) }
                             Button("삭제", systemImage: "trash", role: .destructive) { delete(site) }
@@ -51,6 +63,7 @@ struct SiteListView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { EditButton() }
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    if let onHide { Button(action: onHide) { Image(systemName: side == .leading ? "sidebar.left" : "sidebar.right") }.accessibilityLabel("목록 숨기기") }
                     Menu {
                         Button("옵션", systemImage: "gearshape") { showSettings = true }
                         Divider()
@@ -82,11 +95,12 @@ struct SiteListView: View {
             }
             .confirmationDialog("파일 내용으로 교체", isPresented: Binding(get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } }),
                                 titleVisibility: .visible, presenting: pendingImport) { imp in
-                Button(foreign(imp) ? "그대로 복원" : "교체", role: .destructive) { store.replace(with: imp.sites) }
-                if foreign(imp) { Button("데스크톱 설정은 빼고 복원", role: .destructive) { store.replace(with: withoutDesktop(imp.sites)) } }
+                Button(foreign(imp) ? "그대로 복원" : "교체", role: .destructive) { restore(imp, sites: imp.sites) }
+                if foreign(imp) { Button("데스크톱 설정은 빼고 복원", role: .destructive) { restore(imp, sites: withoutDesktop(imp.sites)) } }
                 Button("취소", role: .cancel) {}
             } message: { imp in
                 Text((foreign(imp) ? "\(imp.device == .ipad ? "iPad" : "iPhone")에서 백업한 파일입니다. 사이트별 데스크톱 설정이 이 기기에도 적용됩니다. " : "")
+                     + (appliesSidebar(imp) ? "분할 화면의 목록 위치/너비도 파일 값으로 바뀝니다. " : "")
                      + "현재 목록 \(store.sites.count)개가 파일의 \(imp.sites.count)개로 바뀝니다." + (imp.skipped > 0 ? " (잘못된 주소 또는 중복 \(imp.skipped)줄은 건너뜀)" : "") + " 확대%는 파일에 적힌 값(없으면 기본 확대% \(Int((store.defaultZoom * 100).rounded()))%)이 됩니다.")
             }
             .alert("알림", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
@@ -106,7 +120,7 @@ struct SiteListView: View {
 
     /// 복원할 수 있는 크기일 때만 파일 저장 창을 연다.
     private func startExport() {
-        switch store.exportCSV(device: Self.device) {
+        switch store.exportCSV(device: Self.device, layout: Self.device == .ipad ? SidebarLayout.load() : nil) {
         case .success(let text): exportText = text; exporting = true
         case .failure(let e): message = describe(e, backup: true)
         }

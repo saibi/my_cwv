@@ -1,5 +1,8 @@
 # [SPL] iPad 분할 화면 (목록 + 웹 페이지)
 
+> **변경 기록**
+> - 2026-11-21 claude-sonnet-5-5: 구현하며 분할 조건을 "regular 크기 등급 **이고 iPad 기기**"로 좁힘 (iPhone 가로 Max가 설정할 수 없는 분할로 바뀌는 것을 막음, 3단계 1)
+
 ## 1. 목표
 - iPad의 넓은 화면에서 커뮤니티 목록(사이드바)과 고른 사이트의 웹 페이지를 한 화면에 같이 보여 준다. 목록에서 다른 사이트를 누르면 오른쪽(또는 왼쪽) 웹 영역만 바뀐다.
 - 사이드바 위치(왼쪽/오른쪽)를 사용자가 고른다. 사이드바 너비를 사용자가 조절하고, 값은 앱을 다시 켜도 유지한다.
@@ -19,7 +22,7 @@ CWVApp
 ## 3. 단계별 상세
 ### 1) 분할 조건
 - 전제 확인(2026-11-21, Xcode 27.2 / iOS SDK 27.2): SwiftUI `NavigationSplitView`는 사이드바를 오른쪽에 둘 수 없다 (SwiftUI 인터페이스에 `primaryEdge` 없음, UIKit `UISplitViewController.primaryEdge`만 있음). 사용자가 끌어서 바꾸는 너비도 SwiftUI에서는 직접 제어/저장할 수 없다 (`navigationSplitViewColumnWidth(min:ideal:max:)`는 고정 범위 지정). 그래서 **`HStack`으로 직접 배치**한다. UIKit 래핑보다 코드가 짧고 좌우/너비를 그대로 제어한다.
-- `@Environment(\.horizontalSizeClass)`가 `.regular`일 때만 분할한다 (SPL-Q2). iPad 전체 화면/가로 Split View 절반 이상은 regular, Slide Over와 좁은 분할은 compact라 지금의 iPhone식 전환을 쓴다. iPhone은 항상 compact(가로 Max 기종 포함 여부는 시뮬레이터로 확인, regular면 분할되어도 동작에는 문제 없음).
+- `@Environment(\.horizontalSizeClass)`가 `.regular`이고 기기가 iPad일 때만 분할한다 (SPL-Q2, 구현 시 iPad 조건 추가). iPad 전체 화면/가로 Split View 절반 이상은 regular, Slide Over와 좁은 분할은 compact라 지금의 iPhone식 전환을 쓴다. iPhone은 항상 compact(가로 Max 기종 포함 여부는 시뮬레이터로 확인, regular면 분할되어도 동작에는 문제 없음).
 
 ### 2) 배치 (`SplitLayout`, CWVApp.swift 안 private 뷰)
 - `GeometryReader { g in HStack(spacing: 0) { ... } }`. `sidebarSide == .trailing`이면 순서를 뒤집는다 (`[web, handle, list]`).

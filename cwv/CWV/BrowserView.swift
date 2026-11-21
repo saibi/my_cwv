@@ -8,7 +8,9 @@ private struct ExternalLink: Identifiable {
 struct BrowserView: View {
     @EnvironmentObject var store: SiteStore
     let site: Site
+    var closeTitle = "목록으로"  // 분할 화면에서는 "목록 숨기기"/"목록 보이기"
     let onClose: () -> Void
+    var onSwipe: (() -> Void)?  // 첫 페이지 가장자리 스와이프 (없으면 onClose)
     @State private var external: ExternalLink?
 
     @AppStorage("fabCorner") private var corner = FabCorner.bottomTrailing
@@ -18,7 +20,7 @@ struct BrowserView: View {
     var body: some View {
         GeometryReader { g in
             ZStack(alignment: alignment) {
-                WebView(site: site, onExternal: { external = ExternalLink(url: $0) }, onBack: onClose,
+                WebView(site: site, onExternal: { external = ExternalLink(url: $0) }, onBack: onSwipe ?? onClose,
                         onTitle: { store.setPageTitle(site.id, $0) })
                 menu.padding(margin).offset(drag)
                     .simultaneousGesture(DragGesture(minimumDistance: 8)
@@ -60,7 +62,7 @@ struct BrowserView: View {
                 UIApplication.shared.open(safariTarget(current: WebCache.view(for: site).web.url, fallback: site.url))
             }
             Divider()
-            Button("목록으로", action: onClose)
+            Button(closeTitle, action: onClose)
         } label: {
             AppGlyph()
                 .foregroundStyle(.primary)

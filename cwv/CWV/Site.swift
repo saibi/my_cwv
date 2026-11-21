@@ -46,16 +46,78 @@ func csvDevice(fromFileName name: String) -> CSVDevice? {
     return base.hasSuffix("-ipad") ? .ipad : nil  // iPhone 백업은 접미사가 없다 (IPD-Q7)
 }
 
-/// 첫 데이터 줄 앞의 주석에서 `# device: ipad|iphone`을 읽는다. 다른 값은 무시한다 (외부 파일).
-func csvDevice(_ text: String) -> CSVDevice? {
+/// 첫 데이터 줄 앞의 주석 `# key: 값`들의 값(소문자)을 위에서부터 모은다. 데이터 줄 뒤의 주석은 보지 않는다 (외부 파일).
+func csvHeader(_ text: String, key: String) -> [String] {
+    var out: [String] = []
+    let prefix = key.lowercased() + ":"
     for raw in text.replacingOccurrences(of: "\u{FEFF}", with: "").split(whereSeparator: \.isNewline) {
         let line = raw.trimmingCharacters(in: .whitespaces)
         if line.isEmpty { continue }
-        guard line.hasPrefix("#") else { return nil }
+        guard line.hasPrefix("#") else { break }
         let t = line.dropFirst().trimmingCharacters(in: .whitespaces).lowercased()
-        if t.hasPrefix("device:"), let d = CSVDevice(rawValue: t.dropFirst("device:".count).trimmingCharacters(in: .whitespaces)) { return d }  // 알 수 없는 값은 건너뛰고 다음 줄을 본다
+        if t.hasPrefix(prefix) { out.append(t.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)) }
     }
-    return nil
+    return out
+}
+
+/// `# device: ipad|iphone`. 다른 값은 건너뛰고 다음 줄을 본다 (IPD-R5).
+func csvDevice(_ text: String) -> CSVDevice? {
+    csvHeader(text, key: "device").lazy.compactMap { CSVDevice(rawValue: $0) }.first
+}
+
+// MARK: - iPad 분할 화면 (SPL)
+
+/// 분할 화면에서 목록(사이드바)이 놓이는 쪽.
+enum SidebarSide: String { case leading, trailing }
+
+/// 분할 화면 설정을 저장하는 UserDefaults 키 (@AppStorage와 같은 키).
+enum SidebarKey {
+    static let side = "sidebarSide", width = "sidebarWidth", hidden = "sidebarHidden"
+}
+
+let sidebarDefaultWidth = 320.0
+let sidebarWidthRange = 240.0...480.0
+
+/// 사이드바 표시 너비: 최소 240, 최대 min(창 폭의 절반, 480). 창이 아주 좁아도 최소는 지킨다 (SPL-Q4).
+func clampSidebarWidth(_ w: Double, total: Double) -> Double {
+    let maxW = max(min(total * 0.5, sidebarWidthRange.upperBound), sidebarWidthRange.lowerBound)
+    return min(max(w, sidebarWidthRange.lowerBound), maxW)
+}
+
+/// 분할 화면 설정 (위치, 너비, 숨김). CSV 백업 헤더에 넣고 읽는다 (SPL-Q5).
+struct SidebarLayout: Equatable {
+    var side = SidebarSide.leading
+    var width = sidebarDefaultWidth
+    var hidden = false
+
+    /// 파일에서 읽은 값. 없거나 잘못된 키는 nil이라 지금 값을 그대로 둔다.
+    struct Partial: Equatable {
+        var side: SidebarSide?
+        var width: Double?
+        var hidden: Bool?
+        var isEmpty: Bool { side == nil && width == nil && hidden == nil }
+    }
+
+    static func load(_ d: UserDefaults = .standard) -> SidebarLayout {
+        SidebarLayout(side: d.string(forKey: SidebarKey.side).flatMap(SidebarSide.init(rawValue:)) ?? .leading,
+                      width: d.object(forKey: SidebarKey.width) as? Double ?? sidebarDefaultWidth,
+                      hidden: d.bool(forKey: SidebarKey.hidden))
+    }
+
+    static func apply(_ p: Partial, to d: UserDefaults = .standard) {
+        if let s = p.side { d.set(s.rawValue, forKey: SidebarKey.side) }
+        if let w = p.width { d.set(w, forKey: SidebarKey.width) }
+        if let h = p.hidden { d.set(h, forKey: SidebarKey.hidden) }
+    }
+}
+
+/// 백업 헤더 `# sidebar-side/width/hidden:`. 외부 파일이므로 키마다 값을 검증하고 잘못된 값은 그 키만 무시한다. 너비는 240...480으로 자른다.
+func csvSidebar(_ text: String) -> SidebarLayout.Partial {
+    SidebarLayout.Partial(
+        side: csvHeader(text, key: "sidebar-side").lazy.compactMap { SidebarSide(rawValue: $0) }.first,
+        width: csvHeader(text, key: "sidebar-width").lazy.compactMap { Int($0) }.first.map {
+            min(max(Double($0), sidebarWidthRange.lowerBound), sidebarWidthRange.upperBound) },
+        hidden: csvHeader(text, key: "sidebar-hidden").lazy.compactMap { $0 == "1" ? true : $0 == "0" ? false : nil }.first)
 }
 
 /// 데스크톱 설정을 뺀 목록 (다른 기기 백업을 복원할 때의 선택지). 뺀 결과 주소/이름/확대%가 같아진 항목은 첫 항목만 남긴다 (IPD-R3:
@@ -243,7 +305,7 @@ func parseDefaultPages(_ text: String, defaultZoom: Double = 1.0) -> [Site] { pa
 
 /// 목록을 CSV(v3)로: 첫 줄 `# v3`, (기기를 알면) `# device: ipad|iphone`, 한 줄에 `주소,"이름",확대%,m|d` (d=데스크톱 사이트) (이름은 항상 큰따옴표로 감싸고 안의 `\` `"`는 `\`로 이스케이프). 이름이 비어 있으면 titles(사이트 id -> 저장해 둔 페이지 타이틀)의 값을 쓰고, 그것도 없으면 빈 칸.
 /// 주소에 쉼표나 따옴표가 있으면 주소를 따옴표로 감싸고(안의 따옴표는 두 개) 손실 없이 보존한다. 이름의 줄바꿈은 공백으로 바꾼다.
-func exportCSV(_ sites: [Site], titles: [String: String] = [:], device: CSVDevice? = nil) -> String {
+func exportCSV(_ sites: [Site], titles: [String: String] = [:], device: CSVDevice? = nil, layout: SidebarLayout? = nil) -> String {
     let lines = sites.map { s -> String in
         var u = s.url.absoluteString
         if u.contains(",") || u.contains("\"") { u = "\"" + u.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
@@ -252,7 +314,8 @@ func exportCSV(_ sites: [Site], titles: [String: String] = [:], device: CSVDevic
         n = n.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespaces)
         return "\(u),\"\(csvEscape(n))\",\(Int((s.zoom * 100).rounded())),\(s.desktop ? "d" : "m")"
     }
-    let header = ["# v\(csvCurrentVersion)"] + (device.map { ["# device: \($0.rawValue)"] } ?? []) + ["# CWV site list: one line per site, url,\"name\",zoom%,layout(m=mobile,d=desktop)"]
+    let sidebar = layout.map { ["# sidebar-side: \($0.side.rawValue)", "# sidebar-width: \(Int(min(max($0.width, sidebarWidthRange.lowerBound), sidebarWidthRange.upperBound).rounded()))", "# sidebar-hidden: \($0.hidden ? 1 : 0)"] } ?? []
+    let header = ["# v\(csvCurrentVersion)"] + (device.map { ["# device: \($0.rawValue)"] } ?? []) + sidebar + ["# CWV site list: one line per site, url,\"name\",zoom%,layout(m=mobile,d=desktop)"]
     return (header + lines).joined(separator: "\n") + "\n"
 }
 
@@ -262,15 +325,16 @@ struct CSVImport {
     var sites: [Site]
     var skipped: Int  // 잘못된 주소나 중복이라 건너뛴 줄 수
     var device: CSVDevice?  // 백업을 만든 기기 (파일 안 표시 > 파일 이름 끝, 모르면 nil)
+    var sidebar = SidebarLayout.Partial()  // iPad 분할 화면 설정 (파일에 있는 것만)
 }
 
 let csvImportMaxBytes = 1_000_000
 let csvImportMaxLines = 500
 
 /// 내보내기 전 검사: 가져오기 제한(크기/줄 수)을 넘는 파일은 만들지 않는다. 백업해 놓고 복원할 수 없는 일을 막는다.
-func exportCSVChecked(_ sites: [Site], titles: [String: String] = [:], device: CSVDevice? = nil) -> Result<String, CSVImportError> {
+func exportCSVChecked(_ sites: [Site], titles: [String: String] = [:], device: CSVDevice? = nil, layout: SidebarLayout? = nil) -> Result<String, CSVImportError> {
     guard sites.count <= csvImportMaxLines else { return .failure(.tooManyLines) }
-    let text = exportCSV(sites, titles: titles, device: device)
+    let text = exportCSV(sites, titles: titles, device: device, layout: layout)
     return text.utf8.count <= csvImportMaxBytes ? .success(text) : .failure(.tooLarge)
 }
 
@@ -290,7 +354,7 @@ func importCSV(_ data: Data, defaultZoom: Double = 1.0, fileName: String? = nil)
     guard lines.count <= csvImportMaxLines else { return .failure(.tooManyLines) }
     let sites = parseSites(lines, version: csvVersion(text), keepDuplicates: true, defaultZoom: defaultZoom)
     guard !sites.isEmpty else { return .failure(.noValidLines) }
-    return .success(CSVImport(sites: sites, skipped: lines.count - sites.count, device: csvDevice(text) ?? fileName.flatMap(csvDevice(fromFileName:))))
+    return .success(CSVImport(sites: sites, skipped: lines.count - sites.count, device: csvDevice(text) ?? fileName.flatMap(csvDevice(fromFileName:)), sidebar: csvSidebar(text)))
 }
 
 /// Safari로 열 주소: 지금 보는 페이지가 http/https면 그것, 아니면 사이트 기본 주소.

@@ -135,5 +135,5 @@ final class SiteStore: ObservableObject {
     func reset() { replace(with: defaultPages(defaultZoom)) }
 
     /// CSV 백업 내용. 이름이 비어 있는 사이트는 저장된 페이지 타이틀을 이름으로 적는다.
-    func exportCSV(device: CSVDevice?) -> Result<String, CSVImportError> { exportCSVChecked(sites, titles: pageTitles, device: device) }
+    func exportCSV(device: CSVDevice?, layout: SidebarLayout? = nil) -> Result<String, CSVImportError> { exportCSVChecked(sites, titles: pageTitles, device: device, layout: layout) }
 }
