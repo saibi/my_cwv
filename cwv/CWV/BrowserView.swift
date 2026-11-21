@@ -15,6 +15,7 @@ struct BrowserView: View {
     @State private var external: ExternalLink?
 
     @AppStorage("fabCorner") private var corner = FabCorner.bottomTrailing
+    @AppStorage(joystickCmKey) private var joystickCm = defaultJoystickCm  // 옵션의 조이스틱 감도 (기기별, SNS)
     // 끄는 중의 이동량. @GestureState라 정상 종료뿐 아니라 시스템이 제스처를 취소해도 자동으로 0으로 돌아온다 (JOY-R2).
     @GestureState(resetTransaction: Transaction(animation: .easeOut(duration: 0.2))) private var drag = CGSize.zero
     @GestureState private var active = false  // 터치 중 (끝나거나 취소되면 false)
@@ -25,8 +26,8 @@ struct BrowserView: View {
     private let fab: CGFloat = 44
 
     private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
-    /// 조이스틱 최소 이동(약 0.3cm)과 모서리 이동 기준(약 1.5cm).
-    private var joystick: Double { joystickDistance(isPad: isPad) }
+    /// 조이스틱 최소 이동(기본 약 0.3cm)과 모서리 이동 기준(그 5배). 옵션의 감도가 바뀌면 바로 반영된다.
+    private var joystick: Double { joystickDistance(isPad: isPad, cm: joystickCm) }
     /// 버튼은 화면 끝에서 조이스틱 거리 이상 안쪽에 둔다. 끝에 붙이면 끝쪽 방향으로 끌 공간이 모자라 뒤로/앞으로/글자 작게 중 일부가 안 된다 (JOY-R1).
     private var margin: CGFloat { CGFloat(fabMargin(joystick: joystick, fab: Double(fab))) }
 
@@ -86,7 +87,7 @@ struct BrowserView: View {
     }
 
     private func action(_ t: CGSize, move: Double? = nil) -> FabAction {
-        fabAction(dx: t.width, dy: t.height, joystick: joystick, move: move ?? fabMoveDistance(isPad: isPad))
+        fabAction(dx: t.width, dy: t.height, joystick: joystick, move: move ?? fabMoveDistance(isPad: isPad, cm: joystickCm))
     }
 
     /// 모서리 이동 거리 이상 끌었어도 가장 가까운 모서리가 지금 모서리면 이동할 곳이 없으므로 방향 동작(뒤로/앞으로/크기)으로 본다.

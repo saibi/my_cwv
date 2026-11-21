@@ -454,6 +454,26 @@ struct TestSite {
         assert(fabMoveDistance(isPad: true) == 78 && fabMoveDistance(isPad: false) == 90)  // 약 1.5cm
         assert(fabMoveDistance(isPad: false) > joystickDistance(isPad: false) * 3 && fabMoveDistance(isPad: true) > joystickDistance(isPad: true) * 3)  // 조이스틱 구간이 충분히 남는다
         assert(fabIsTap(maxDisplacement: 0) && fabIsTap(maxDisplacement: 7.9) && !fabIsTap(maxDisplacement: 8) && !fabIsTap(maxDisplacement: 200))  // 탭/끌기 구분 (끌었다 돌아온 경우는 최대 거리로 판단)
+        // SNS: 조이스틱 감도 (cm 설정). 기본 0.3cm에서는 이전 상수와 같아야 한다
+        assert(clampJoystickCm(0.3) == 0.3 && clampJoystickCm(.nan) == 0.3 && clampJoystickCm(.infinity) == 0.3 && clampJoystickCm(-.infinity) == 0.3)
+        assert(clampJoystickCm(-5) == 0.2 && clampJoystickCm(0.1) == 0.2 && clampJoystickCm(9) == 1.0 && clampJoystickCm(1.0) == 1.0 && clampJoystickCm(0.2) == 0.2)
+        assert(clampJoystickCm(0.33) == 0.35 && clampJoystickCm(0.31) == 0.3 && clampJoystickCm(0.425) == 0.45)  // 0.05 단위
+        assert(joystickDistance(isPad: false, cm: 0.2) == 12 && joystickDistance(isPad: true, cm: 0.2) == 10)  // 가장 민감
+        assert(fabMoveDistance(isPad: false, cm: 0.2) == 60 && fabMoveDistance(isPad: true, cm: 0.2) == 52)
+        assert(joystickDistance(isPad: false, cm: 1.0) == 60 && joystickDistance(isPad: true, cm: 1.0) == 52)  // 가장 둔감
+        assert(fabMoveDistance(isPad: false, cm: 1.0) == 300 && fabMoveDistance(isPad: true, cm: 1.0) == 260)
+        assert(joystickDistance(isPad: false, cm: 0.6) == 36 && fabMoveDistance(isPad: false, cm: 0.6) == 180 && joystickDistance(isPad: false, cm: .nan) == 18)
+        for isPad in [false, true] {
+            var prev = 0.0
+            for i in 4...20 {  // 0.20 ... 1.00cm, 0.05 단위 전체
+                let cm = Double(i) / 20
+                let j = joystickDistance(isPad: isPad, cm: cm), mv = fabMoveDistance(isPad: isPad, cm: cm)
+                assert(j > fabTapSlop && j >= prev && abs(mv - 5 * j) <= 2.5)  // 탭 판정(8pt)보다 크고, 단조 증가, 이동은 약 5배
+                let m = fabMargin(joystick: j, fab: 44)
+                assert(m + 44 / 2 >= j + 16 && m >= 16)  // 버튼 중심에서 끝까지 거리 >= 조이스틱 거리 + 16pt가 범위 전체에서 유지
+                prev = j
+            }
+        }
         // JOY-R1: 버튼 중심에서 어느 끝까지든 조이스틱 거리 이상 남아야 끝쪽 방향 동작이 가능하다
         for isPad in [false, true] {
             let j = joystickDistance(isPad: isPad), m = fabMargin(joystick: j, fab: 44)

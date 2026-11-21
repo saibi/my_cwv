@@ -404,11 +404,31 @@ enum FabAction: Equatable { case none, back, forward, zoomIn, zoomOut, move }
 let fabTapSlop = 8.0
 func fabIsTap(maxDisplacement: Double) -> Bool { maxDisplacement < fabTapSlop }
 
-/// 조이스틱이 동작하는 최소 이동 거리: 약 0.3cm (기기 화면 밀도 기준 근사값: iPhone 18pt, iPad 16pt. 1cm = 각각 약 60pt, 52pt).
-func joystickDistance(isPad: Bool) -> Double { isPad ? 16 : 18 }
+// MARK: - 조이스틱 감도 (SNS)
 
-/// 이 거리 이상 끌면 버튼 모서리 이동으로 본다: 약 1.5cm (iPhone 90pt, iPad 78pt).
-func fabMoveDistance(isPad: Bool) -> Double { isPad ? 78 : 90 }
+/// 옵션의 "조이스틱 감도": 조이스틱이 동작하는 최소 이동 거리(cm). 기기별 UserDefaults에 저장하고 CSV 백업에는 넣지 않는다.
+let joystickCmKey = "joystickCm"
+let joystickCmRange = 0.2...1.0
+let defaultJoystickCm = 0.3
+
+/// 1cm에 해당하는 pt. 기기 화면 밀도 기준 근사값 (iPhone 약 60pt, iPad 약 52pt).
+func joystickPtPerCm(isPad: Bool) -> Double { isPad ? 52 : 60 }
+
+/// 저장된 감도를 안전한 값으로: NaN/무한대는 기본값, 범위로 자르고 0.05cm 단위로 맞춘다 (읽을 때마다 거친다).
+func clampJoystickCm(_ cm: Double) -> Double {
+    guard cm.isFinite else { return defaultJoystickCm }
+    return (min(max(cm, joystickCmRange.lowerBound), joystickCmRange.upperBound) * 20).rounded() / 20
+}
+
+/// 조이스틱이 동작하는 최소 이동 거리(pt). 기본 0.3cm에서 iPhone 18pt, iPad 16pt.
+func joystickDistance(isPad: Bool, cm: Double = defaultJoystickCm) -> Double {
+    (clampJoystickCm(cm) * joystickPtPerCm(isPad: isPad)).rounded()
+}
+
+/// 이 거리 이상 끌면 버튼 모서리 이동으로 본다: 감도의 5배. 기본에서 약 1.5cm (iPhone 90pt, iPad 78pt).
+func fabMoveDistance(isPad: Bool, cm: Double = defaultJoystickCm) -> Double {
+    (clampJoystickCm(cm) * 5 * joystickPtPerCm(isPad: isPad)).rounded()
+}
 
 /// 버튼을 웹 영역 가장자리에서 띄우는 여백. 버튼 중심에서 어느 쪽 끝까지든 조이스틱 거리보다 16pt 더 남게 하되 기본 여백(16pt) 아래로는 줄이지 않는다.
 /// 손가락은 화면 밖으로 못 나가므로, 끝에 가까우면 끝쪽 방향의 기준 거리에 닿을 수 없다 (JOY-R1).
