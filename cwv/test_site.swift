@@ -415,33 +415,31 @@ struct TestSite {
         SidebarLayout.apply(SidebarLayout.Partial(side: nil, width: 400, hidden: nil), to: ud18)
         assert(SidebarLayout.load(ud18) == SidebarLayout(side: .trailing, width: 400, hidden: true))  // 너비 쓰기/읽기 (SPL-R 리뷰: 빠져 있던 경로)
 
-        // SWB: 분할 화면 가장자리 스와이프 (목록 왼쪽: 웹 x 332...1194, 화면 폭 1194)
+        // SWB: 분할 화면 웹 영역 스와이프. 웹 영역 전체에서 시작하되 구분선 쪽 20pt, 화면 끝 쪽 24pt는 비운다
+        // 목록 왼쪽: 웹 x 332...1194 (폭 862, 오른쪽은 화면 끝) -> 시작 가능 [20, 838]
         func ps(_ sx: Double, minX: Double = 332, w: Double = 862, dx: Double, dy: Double = 5, vx: Double = 0) -> PaneSwipe? {
             paneSwipe(startX: sx, viewWidth: w, viewMinX: minX, screenWidth: 1194, dx: dx, dy: dy, vx: vx)
         }
-        assert(ps(10, dx: 120) == .back && ps(24, dx: 120) == .back)  // 왼쪽 가장자리에서 오른쪽으로 = 뒤로
-        assert(ps(30, dx: 120) == nil)  // 가장자리 밖에서 시작
-        assert(ps(10, minX: 0, w: 1194, dx: 120) == nil)  // 웹뷰가 화면 왼쪽 끝이면 WebKit 기본 제스처 (이중 이동 방지)
-        assert(ps(10, dx: 30) == nil && ps(10, dx: 30, vx: 600) == .back)  // 이동량 또는 속도 기준
-        assert(ps(10, dx: 60) == .back && ps(10, dx: 40) == nil)  // 천천히 밀어도 50pt를 넘으면 이동 (SWB 후속: 느린 스와이프)
-        assert(ps(10, dx: 20, vx: 350) == .back && ps(10, dx: 20, vx: 250) == nil)  // 속도 기준 300pt/s
-        assert(ps(10, dx: -120) == nil)  // 왼쪽 가장자리에서 왼쪽으로는 아무것도 아님
-        assert(ps(10, dx: 30, vx: -600) == nil && ps(850, minX: 0, dx: -30, vx: 600) == nil)  // 짧게 밀었다가 반대로 튕기면 취소 (SWB-R4/D1)
-        assert(ps(10, dx: 100, dy: 200) == nil)  // 세로 우세는 스크롤
-        // 앞으로: 웹 오른쪽 끝이 화면 끝이 아닐 때만 (목록이 오른쪽: 웹 x 0...862)
-        assert(ps(850, minX: 0, dx: -120, vx: -300) == .forward && ps(838, minX: 0, dx: -120) == .forward)
-        assert(ps(830, minX: 0, dx: -120) == nil)  // 가장자리 밖
-        assert(ps(850, dx: -120) == nil)  // 웹 오른쪽 끝이 화면 끝(목록 왼쪽)이면 기본 제스처
-        assert(ps(850, minX: 0, dx: 120) == nil && ps(850, minX: 0, dx: -30) == nil && ps(850, minX: 0, dx: -30, vx: -600) == .forward)
-        assert(ps(850, minX: 0, dx: -100, dy: 200) == nil)
-
-        // SWB-R2: 방향이 맞을 때만 시작
-        // 시작 판단은 속도가 아니라 이동량(dx, dy)으로 한다: 느리게 밀어 이동량이 10pt 안팎일 때도 인식된다
+        assert(ps(100, dx: 120) == .back && ps(420, dx: 120) == .back && ps(20, dx: 120) == .back)  // 영역 전체에서 오른쪽으로 = 뒤로
+        assert(ps(420, dx: -120) == .forward && ps(838, dx: -120) == .forward && ps(100, dx: -120) == .forward)  // 왼쪽으로 = 앞으로
+        assert(ps(19, dx: 120) == nil && ps(10, dx: -120) == nil)  // 구분선 쪽 20pt는 비움 (핸들 드래그와 겹치지 않게)
+        assert(ps(839, dx: 120) == nil && ps(850, dx: -120) == nil)  // 화면 끝 쪽 24pt는 WebKit 기본 제스처
+        // 목록 오른쪽: 웹 x 0...862 (왼쪽은 화면 끝) -> [24, 842]
+        assert(ps(23, minX: 0, dx: 120) == nil && ps(24, minX: 0, dx: 120) == .back && ps(842, minX: 0, dx: -120) == .forward && ps(843, minX: 0, dx: -120) == nil)
+        // 목록 숨김: 웹이 전체 폭 [24, 1170]
+        assert(ps(10, minX: 0, w: 1194, dx: 120) == nil && ps(500, minX: 0, w: 1194, dx: 120) == .back && ps(1180, minX: 0, w: 1194, dx: -120) == nil)
+        // 이동량/속도 기준 (천천히 밀어도 50pt, 또는 그 방향 300pt/s)
+        assert(ps(100, dx: 30) == nil && ps(100, dx: 30, vx: 600) == .back)
+        assert(ps(100, dx: 60) == .back && ps(100, dx: 40) == nil)
+        assert(ps(100, dx: 20, vx: 350) == .back && ps(100, dx: 20, vx: 250) == nil)
+        assert(ps(100, dx: 30, vx: -600) == nil && ps(500, dx: -30, vx: 600) == nil)  // 짧게 밀었다가 반대로 튕기면 취소 (D1)
+        assert(ps(100, dx: 100, dy: 200) == nil && ps(500, dx: -100, dy: 200) == nil)  // 세로 우세는 스크롤
+        // 시작 판단은 속도가 아니라 이동량(dx, dy)으로: 느리게 밀어 10pt 안팎일 때도 인식, 세로 스크롤과는 가로가 2배 이상 우세해야 구분
         assert(paneSwipeStarts(canBack: true, canForward: false, dx: 10, dy: 2) && !paneSwipeStarts(canBack: true, canForward: false, dx: -10, dy: 2))
         assert(paneSwipeStarts(canBack: false, canForward: true, dx: -10, dy: 2) && !paneSwipeStarts(canBack: false, canForward: true, dx: 10, dy: 2))
         assert(!paneSwipeStarts(canBack: true, canForward: false, dx: 5, dy: 20) && !paneSwipeStarts(canBack: false, canForward: false, dx: 10, dy: 0))
         assert(paneSwipeStarts(canBack: true, canForward: true, dx: 10, dy: 0) && paneSwipeStarts(canBack: true, canForward: true, dx: -10, dy: 0))
-        assert(paneSwipeStarts(canBack: true, canForward: false, dx: 8, dy: 8))  // 대각선에 가까워도 가로가 같거나 크면 시작
+        assert(paneSwipeStarts(canBack: true, canForward: false, dx: 10, dy: 5) && !paneSwipeStarts(canBack: true, canForward: false, dx: 8, dy: 8))  // 대각선은 스크롤에 양보
 
         // JSON 왕복
         let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(pages))

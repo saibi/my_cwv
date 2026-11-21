@@ -3,21 +3,23 @@ import WebKit
 import SafariServices
 import UIKit.UIGestureRecognizerSubclass
 
-/// 웹뷰 자신의 왼쪽/오른쪽 가장자리에서 시작하는 팬 (분할 화면의 뒤로/앞으로, SWB).
+/// 웹 영역 전체에서 시작하는 가로 팬 (분할 화면의 뒤로/앞으로, SWB). 구분선 쪽 20pt와 화면 끝 쪽 24pt는 비운다 (paneStartAllowed).
 /// 시작 조건이 안 맞으면 touchesBegan에서 바로 실패해 웹뷰의 스크롤과 링크 탭을 지연시키지 않는다.
-/// 웹뷰의 그쪽 끝이 화면 끝이면 WebKit 기본 제스처가 처리하므로 실패한다 (이중 이동 방지).
 final class PaneEdgePan: UIPanGestureRecognizer {
     private(set) var startX = 0.0
-    private(set) var canBack = false, canForward = false  // 시작한 쪽이 허용하는 방향 (gestureRecognizerShouldBegin에서 사용)
+    private(set) var startOffsetX: CGFloat = 0  // 시작할 때 웹 콘텐츠의 가로 스크롤 위치 (가로로 스크롤된 제스처는 이동으로 보지 않는다)
+    private(set) var canBack = false, canForward = false  // 이동할 기록이 있는지 (gestureRecognizerShouldBegin에서 사용)
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         super.touchesBegan(touches, with: event)
         guard let web = view as? WKWebView, let t = touches.first else { state = .failed; return }
         startX = t.location(in: web).x
+        startOffsetX = web.scrollView.contentOffset.x
         let frame = web.convert(web.bounds, to: nil)
-        let screenW = web.window?.bounds.width ?? frame.maxX
-        canBack = web.canGoBack && startX <= paneSwipeEdge && frame.minX > 1
-        canForward = web.canGoForward && startX >= web.bounds.width - paneSwipeEdge && screenW - frame.maxX > 1
+        let allowed = paneStartAllowed(startX: startX, viewWidth: web.bounds.width, viewMinX: frame.minX,
+                                       screenWidth: Double(web.window?.bounds.width ?? frame.maxX))
+        canBack = allowed && web.canGoBack
+        canForward = allowed && web.canGoForward
         if !(canBack || canForward) { state = .failed }
     }
 }
@@ -84,6 +86,8 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate, UIGesture
 
     @objc private func panePan(_ g: PaneEdgePan) {
         guard g.state == .ended else { return }
+        // 페이지가 실제로 가로로 스크롤됐으면(표, 코드 블록 등) 이동으로 보지 않는다
+        guard abs(web.scrollView.contentOffset.x - g.startOffsetX) < 2 else { return }
         let p = g.translation(in: web), v = g.velocity(in: web)
         let frame = web.convert(web.bounds, to: nil)
         switch paneSwipe(startX: g.startX, viewWidth: web.bounds.width, viewMinX: frame.minX, screenWidth: Double(web.window?.bounds.width ?? frame.maxX),

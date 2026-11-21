@@ -144,26 +144,33 @@ func shouldCloseOnEdgeSwipe(translation: Double, velocity: Double) -> Bool {
     translation > 80 || velocity > 500
 }
 
-/// 분할 화면에서 웹 영역 가장자리 스와이프의 결과 (SWB).
+/// 분할 화면에서 웹 영역 스와이프의 결과 (SWB).
 enum PaneSwipe { case back, forward }
-let paneSwipeEdge = 24.0
+let paneNativeEdge = 24.0  // 웹뷰가 화면 끝에 닿은 쪽: WebKit 기본 제스처가 쓰는 구역이라 비운다 (이중 이동 방지)
+let paneDividerGap = 20.0  // 사이드바 구분선 쪽: 너비 조절 핸들 드래그와 겹치지 않게 비운다
 
-/// 웹뷰 자신의 가장자리(24pt)에서 시작한 가로 스와이프를 뒤로/앞으로로 해석한다.
-/// 웹뷰의 그쪽 끝이 화면(창) 끝에 닿아 있으면 WebKit 기본 제스처가 이미 처리하므로 nil (이중 이동 방지).
-/// 이동량/속도 기준은 paneSwipeDone. startX는 웹뷰 안의 x, viewMinX/screenWidth는 창 좌표.
+/// 웹 영역 전체에서 시작할 수 있되, 양쪽 가장자리 구역은 비운다 (화면 끝에 닿은 쪽 24pt, 구분선 쪽 20pt).
+/// startX는 웹뷰 안의 x, viewMinX/screenWidth는 창 좌표.
+func paneStartAllowed(startX: Double, viewWidth: Double, viewMinX: Double, screenWidth: Double) -> Bool {
+    let left = viewMinX <= 1 ? paneNativeEdge : paneDividerGap
+    let right = screenWidth - (viewMinX + viewWidth) <= 1 ? paneNativeEdge : paneDividerGap
+    return startX >= left && startX <= viewWidth - right
+}
+
+/// 웹 영역의 가로 스와이프를 뒤로(오른쪽으로 밀기)/앞으로(왼쪽으로 밀기)로 해석한다.
+/// 이동량/속도 기준은 paneSwipeDone. 반대로 튕기면(이동량이 모자란데 속도가 반대) 취소다.
 func paneSwipe(startX: Double, viewWidth: Double, viewMinX: Double, screenWidth: Double, dx: Double, dy: Double, vx: Double) -> PaneSwipe? {
-    guard abs(dx) > abs(dy) else { return nil }
-    let atLeft = viewMinX <= 1, atRight = screenWidth - (viewMinX + viewWidth) <= 1
-    if dx > 0, startX <= paneSwipeEdge, !atLeft, paneSwipeDone(translation: dx, velocity: vx) { return .back }
-    if dx < 0, startX >= viewWidth - paneSwipeEdge, !atRight, paneSwipeDone(translation: -dx, velocity: -vx) { return .forward }
+    guard abs(dx) > abs(dy), paneStartAllowed(startX: startX, viewWidth: viewWidth, viewMinX: viewMinX, screenWidth: screenWidth) else { return nil }
+    if dx > 0, paneSwipeDone(translation: dx, velocity: vx) { return .back }
+    if dx < 0, paneSwipeDone(translation: -dx, velocity: -vx) { return .forward }
     return nil
 }
 
-/// 가장자리 팬을 시작할지: 가로가 우세하고, 시작한 쪽이 허용하는 방향(왼쪽 끝=오른쪽으로 뒤로, 오른쪽 끝=왼쪽으로 앞으로)일 때만.
+/// 팬을 시작할지: 가로가 세로의 2배 이상 우세하고 방향이 이동 가능한 쪽(오른쪽으로=뒤로, 왼쪽으로=앞으로)일 때만. 웹 영역 전체에서 인식하므로 세로 스크롤과 구분하려고 우세 기준을 높였다.
 /// 방향이 틀린 드래그(예: 왼쪽 끝의 슬라이더를 왼쪽으로)는 웹 콘텐츠의 터치를 취소시키지 않도록 시작하지 않는다 (SWB-R2).
 /// dx/dy는 시작부터의 이동량이다. 속도는 천천히 밀면 시작 순간에 작고 흔들려서 방향 판단에 쓰면 빠르게 밀 때만 인식된다.
 func paneSwipeStarts(canBack: Bool, canForward: Bool, dx: Double, dy: Double) -> Bool {
-    abs(dx) >= abs(dy) && ((canBack && dx > 0) || (canForward && dx < 0))
+    abs(dx) >= 2 * abs(dy) && ((canBack && dx > 0) || (canForward && dx < 0))
 }
 
 /// 가장자리 스와이프를 이동으로 인정하는 기준: 천천히 밀어도 되도록 거리 50pt, 또는 그 방향으로 300pt/s.
