@@ -404,12 +404,15 @@ enum FabAction: Equatable { case none, back, forward, zoomIn, zoomOut, move }
 let fabTapSlop = 8.0
 func fabIsTap(maxDisplacement: Double) -> Bool { maxDisplacement < fabTapSlop }
 
-/// 약 1cm에 해당하는 pt. 기기 화면 밀도 기준 근사값 (iPhone 약 60pt, iPad 약 52pt).
-func joystickDistance(isPad: Bool) -> Double { isPad ? 52 : 60 }
+/// 조이스틱이 동작하는 최소 이동 거리: 약 0.3cm (기기 화면 밀도 기준 근사값: iPhone 18pt, iPad 16pt. 1cm = 각각 약 60pt, 52pt).
+func joystickDistance(isPad: Bool) -> Double { isPad ? 16 : 18 }
 
-/// 버튼을 웹 영역 가장자리에서 띄우는 여백. 버튼 중심에서 어느 쪽 끝까지든 조이스틱 거리(1cm)보다 16pt 더 남게 한다.
+/// 이 거리 이상 끌면 버튼 모서리 이동으로 본다: 약 1.5cm (iPhone 90pt, iPad 78pt).
+func fabMoveDistance(isPad: Bool) -> Double { isPad ? 78 : 90 }
+
+/// 버튼을 웹 영역 가장자리에서 띄우는 여백. 버튼 중심에서 어느 쪽 끝까지든 조이스틱 거리보다 16pt 더 남게 하되 기본 여백(16pt) 아래로는 줄이지 않는다.
 /// 손가락은 화면 밖으로 못 나가므로, 끝에 가까우면 끝쪽 방향의 기준 거리에 닿을 수 없다 (JOY-R1).
-func fabMargin(joystick: Double, fab: Double) -> Double { joystick + 16 - fab / 2 }
+func fabMargin(joystick: Double, fab: Double) -> Double { max(16, joystick + 16 - fab / 2) }
 
 /// 손을 뗀 위치(시작부터의 이동량 dx, dy)로 동작을 정한다. 튕기는 속도는 쓰지 않는다.
 /// move 이상이면 모서리 이동, 최대축 이동이 joystick 미만이면(돌아온 경우 포함) 없음, 그 사이는 더 많이 움직인 축이 방향.

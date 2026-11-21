@@ -450,14 +450,17 @@ struct TestSite {
         assert(fa(-40, -61) == .zoomIn && fa(-70, -70) == .back && fa(70, 70) == .forward)  // 대각선: 더 많이 움직인 축, 같으면 가로
         assert(fa(179, 0) == .forward && fa(180, 0) == .move && fa(130, 130) == .move && fa(100, 100) == .forward)  // 모서리 이동 경계 (거리 기준)
         assert(fa(-180, 0) == .move && fa(0, -200) == .move)
-        assert(joystickDistance(isPad: true) == 52 && joystickDistance(isPad: false) == 60)
+        assert(joystickDistance(isPad: true) == 16 && joystickDistance(isPad: false) == 18)  // 약 0.3cm
+        assert(fabMoveDistance(isPad: true) == 78 && fabMoveDistance(isPad: false) == 90)  // 약 1.5cm
+        assert(fabMoveDistance(isPad: false) > joystickDistance(isPad: false) * 3 && fabMoveDistance(isPad: true) > joystickDistance(isPad: true) * 3)  // 조이스틱 구간이 충분히 남는다
         assert(fabIsTap(maxDisplacement: 0) && fabIsTap(maxDisplacement: 7.9) && !fabIsTap(maxDisplacement: 8) && !fabIsTap(maxDisplacement: 200))  // 탭/끌기 구분 (끌었다 돌아온 경우는 최대 거리로 판단)
         // JOY-R1: 버튼 중심에서 어느 끝까지든 조이스틱 거리 이상 남아야 끝쪽 방향 동작이 가능하다
         for isPad in [false, true] {
             let j = joystickDistance(isPad: isPad), m = fabMargin(joystick: j, fab: 44)
-            assert(m + 44 / 2 >= j + 16 && m >= 16)  // 중심까지 거리 >= 1cm + 16pt, 이전 여백(16pt)보다 안쪽
+            assert(m + 44 / 2 >= j + 16 && m >= 16)  // 중심까지 거리 >= 조이스틱 거리 + 16pt, 기본 여백(16pt) 이상
         }
-        assert(fabMargin(joystick: 60, fab: 44) == 54 && fabMargin(joystick: 52, fab: 44) == 46)
+        assert(fabMargin(joystick: 60, fab: 44) == 54 && fabMargin(joystick: 52, fab: 44) == 46)  // 거리가 길면 여백이 늘고
+        assert(fabMargin(joystick: 18, fab: 44) == 16 && fabMargin(joystick: 16, fab: 44) == 16)  // 0.3cm에서는 기본 여백 그대로
         assert(FabCorner.allCases.count == 4 && Set(FabCorner.allCases.map(\.title)).count == 4)
 
         // JSON 왕복
