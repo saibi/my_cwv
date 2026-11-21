@@ -22,7 +22,7 @@ func bundledDefaultPages(defaultZoom: Double = initialDefaultZoom) -> [Site] {
     let text = Bundle.main.url(forResource: "default_page", withExtension: "csv")
         .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
     let sites = parseDefaultPages(text, defaultZoom: defaultZoom)
-    return sites.isEmpty ? fallbackSites() : sites
+    return sites.isEmpty ? fallbackSites(defaultZoom: defaultZoom) : sites
 }
 
 final class SiteStore: ObservableObject {

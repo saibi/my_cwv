@@ -246,8 +246,8 @@ struct TestSite {
             Site(name: "", url: url("https://d.com/a,b")),  // 주소에 쉼표가 있으면 따옴표로 감싼다
             Site(name: "이름", url: url("https://e.com/?q=a,b&r=1")),
         ])
-        assert(exported.hasPrefix("# CWV site list") && exported.hasSuffix("\n"))
-        assert(exported.contains("\n\"https://d.com/a,b\",,100\n") && exported.contains("\"https://e.com/?q=a,b&r=1\",이름,100\n"))
+        assert(exported.hasPrefix("# v2\n") && exported.hasSuffix("\n"))
+        assert(exported.contains("\n\"https://d.com/a,b\",\"\",100\n") && exported.contains("\"https://e.com/?q=a,b&r=1\",\"이름\",100\n"))
         guard case .success(let imp) = importCSV(Data(exported.utf8)) else { fatalError("import failed") }
         assert(imp.sites.map(\.name) == ["", "제목, 쉼표", "줄 바꿈", "", "이름"] && imp.skipped == 0)  // 이름 왕복, 줄바꿈은 공백
         assert(imp.sites.map { $0.url.absoluteString } == ["https://a.com/x", "https://b.com/y?q=1", "https://c.com", "https://d.com/a,b", "https://e.com/?q=a,b&r=1"])  // 쉼표 주소도 손실 없이 왕복 (LST-R4)
@@ -293,8 +293,20 @@ struct TestSite {
         // OPT: 확대% 토큰, 3/2/1칸 해석, 이름 쉼표, 범위 밖
         assert(parseZoomToken("120") == 1.2 && parseZoomToken(" 120% ") == 1.2 && parseZoomToken("10") == 0.5 && parseZoomToken("999") == 3.0)
         assert(parseZoomToken("") == nil && parseZoomToken("abc") == nil && parseZoomToken("-5") == nil && parseZoomToken("%") == nil)
-        let z = parseDefaultPages("https://a.com,이름,150\nhttps://b.com,제목, 쉼표,80%\nhttps://c.com,,200\nhttps://d.com,이름만\nhttps://e.com\nhttps://f.com,쉼표, 포함\nhttps://g.com,x,9999", defaultZoom: 1.2)
+        let z = parseDefaultPages("# v2\nhttps://a.com,\"이름\",150\nhttps://b.com,\"제목, 쉼표\",80%\nhttps://c.com,\"\",200\nhttps://d.com,\"이름만\"\nhttps://e.com\nhttps://f.com,\"쉼표, 포함\"\nhttps://g.com,\"x\",9999", defaultZoom: 1.2)
         assert(z.map(\.name) == ["이름", "제목, 쉼표", "", "이름만", "", "쉼표, 포함", "x"])
+        // v1(첫 줄에 # v2가 없음)은 확대%를 읽지 않는다: 첫 쉼표 뒤가 전부 이름 (OPT-R2)
+        assert(csvVersion("https://a.com,시즌, 2") == 1 && csvVersion("# CWV site list: one line per site, url[,name]\n") == 1 && csvVersion("\u{FEFF}# V2 \n") == 2 && csvVersion("# v3") == 3 && csvVersion("") == 1)
+        let v1 = parseDefaultPages("https://a.com,시즌, 2\nhttps://b.com,\"따옴표\",150", defaultZoom: 1.2)
+        assert(v1.map(\.name) == ["시즌, 2", "\"따옴표\",150"] && v1.map(\.zoom) == [1.2, 1.2])
+        // v2 이스케이프: 이름의 " 와 \ 는 \로 감싸 왕복, 따옴표 없는 손글씨 줄도 허용, 닫히지 않은 따옴표 줄은 건너뜀
+        let esc = [Site(name: "그는 \"안녕\" 했다, \\끝", url: url("https://q.com"), zoom: 1.3), Site(name: "\\", url: url("https://r.com"))]
+        let escText = exportCSV(esc)
+        assert(escText.contains("https://q.com,\"그는 \\\"안녕\\\" 했다, \\\\끝\",130\n"))
+        guard case .success(let escBack) = importCSV(Data(escText.utf8)) else { fatalError() }
+        assert(escBack.sites.map(\.name) == esc.map(\.name) && escBack.sites.map(\.zoom) == [1.3, 1.0])
+        let loose = parseDefaultPages("# v2\nhttps://a.com,손글씨, 이름,130\nhttps://b.com,\"닫히지 않음\nhttps://c.com,\"끝\" x", defaultZoom: 1.2)
+        assert(loose.count == 1 && loose[0].name == "손글씨, 이름" && loose[0].zoom == 1.3)
         assert(z.map(\.zoom) == [1.5, 0.8, 2.0, 1.2, 1.2, 1.2, 3.0])  // 칸이 없으면 기본 확대%, 범위 밖은 보정
         // 백업: 이름이 비면 저장된 타이틀, 확대% 포함. 복원하면 이름과 확대%가 그대로 (OPT-Q2)
         let src = [Site(name: "", url: url("https://a.com"), zoom: 1.5), Site(name: "직접", url: url("https://b.com"), zoom: 0.8), Site(name: "", url: url("https://c.com"), zoom: 1.2)]
@@ -324,12 +336,18 @@ struct TestSite {
         st16.update(e16)
         assert(st16.sites[0].name == "새 이름" && st16.sites[0].url.host == "new.example" && st16.sites[0].zoom == 2.0)
         // 초기화는 기본 목록 파일의 % 없는 줄에 지금의 기본 확대%를 쓴다
-        let dyn = SiteStore(defaults: fresh().0, backup: .none, defaultPages: { parseDefaultPages("https://a.com\nhttps://b.com,b,90", defaultZoom: $0) })
+        let dyn = SiteStore(defaults: fresh().0, backup: .none, defaultPages: { parseDefaultPages("# v2\nhttps://a.com\nhttps://b.com,\"b\",90", defaultZoom: $0) })
         assert(dyn.sites.map(\.zoom) == [1.2, 0.9])
         dyn.defaultZoom = 1.4
         dyn.reset()
         assert(dyn.sites.map(\.zoom) == [1.4, 0.9])
-        if case .success(let t) = dyn.exportCSV() { assert(t.contains("https://a.com,,140")) } else { fatalError() }
+        if case .success(let t) = dyn.exportCSV() { assert(t.contains("https://a.com,\"\",140")) } else { fatalError() }
+
+        assert(fallbackSites(defaultZoom: 1.5)[0].zoom == 1.5)  // 기본 목록이 없을 때도 기본 확대% (OPT-R3)
+
+        // 주소와 이름이 같아도 확대%가 다르면 복원에서 둘 다 남는다 (OPT-R1)
+        guard case .success(let same) = importCSV(Data("# v2\nhttps://g.com,\"GeekNews\",120\nhttps://g.com,\"GeekNews\",180\nhttps://g.com,\"GeekNews\",180\n".utf8)) else { fatalError() }
+        assert(same.sites.map(\.zoom) == [1.2, 1.8] && Set(same.sites.map(\.id)).count == 2 && same.skipped == 1)
 
         // JSON 왕복
         let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(pages))
