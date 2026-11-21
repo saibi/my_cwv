@@ -17,6 +17,11 @@ struct SiteListView: View {
     @State private var exportText = ""
     @State private var showSettings = false
 
+    /// 다른 기기에서 만든 백업이고 데스크톱으로 지정된 사이트가 있어 선택지를 보여 줄 때.
+    private func foreign(_ imp: CSVImport) -> Bool {
+        imp.device != nil && imp.device != Self.device && imp.sites.contains { $0.desktop }
+    }
+
     private func delete(_ site: Site) {
         if let i = store.sites.firstIndex(of: site) { store.remove(at: [i]) }
     }
@@ -38,6 +43,9 @@ struct SiteListView: View {
                 .onMove { store.sites.move(fromOffsets: $0, toOffset: $1) }
                 .onDelete { store.remove(at: $0) }
             }
+            .frame(maxWidth: 700)  // iPad 등 넓은 화면에서 목록이 끝까지 늘어나지 않게 가운데 정렬
+            .frame(maxWidth: .infinity)
+            .background(Color(.systemGroupedBackground))
             .overlay { if store.sites.isEmpty { Text("오른쪽 위 +로 추가하거나 ... 메뉴에서 기본값으로 초기화하세요").foregroundStyle(.secondary).padding() } }
             .navigationTitle("커뮤니티")
             .toolbar {
@@ -57,7 +65,7 @@ struct SiteListView: View {
             .sheet(item: $editing) { SiteEditView(existing: $0.existing) }
             .sheet(isPresented: $showSettings) { SettingsView() }
             .fileExporter(isPresented: $exporting, document: CSVDocument(text: exportText),
-                          contentType: .commaSeparatedText, defaultFilename: "cwv_sites_\(Self.today)") { result in
+                          contentType: .commaSeparatedText, defaultFilename: backupFileName(date: Self.today, device: Self.device)) { result in
                 switch result {
                 case .success: message = "백업했습니다. 파일 앱에서 저장한 위치를 확인하세요."
                 case .failure(let e): message = "백업하지 못했습니다: \(e.localizedDescription)"
@@ -74,10 +82,12 @@ struct SiteListView: View {
             }
             .confirmationDialog("파일 내용으로 교체", isPresented: Binding(get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } }),
                                 titleVisibility: .visible, presenting: pendingImport) { imp in
-                Button("교체", role: .destructive) { store.replace(with: imp.sites) }
+                Button(foreign(imp) ? "그대로 복원" : "교체", role: .destructive) { store.replace(with: imp.sites) }
+                if foreign(imp) { Button("데스크톱 설정은 빼고 복원", role: .destructive) { store.replace(with: withoutDesktop(imp.sites)) } }
                 Button("취소", role: .cancel) {}
             } message: { imp in
-                Text("현재 목록 \(store.sites.count)개가 파일의 \(imp.sites.count)개로 바뀝니다." + (imp.skipped > 0 ? " (잘못된 주소 또는 중복 \(imp.skipped)줄은 건너뜀)" : "") + " 확대%는 파일에 적힌 값(없으면 기본 확대% \(Int((store.defaultZoom * 100).rounded()))%)이 됩니다.")
+                Text((foreign(imp) ? "\(imp.device == .ipad ? "iPad" : "iPhone")에서 백업한 파일입니다. 사이트별 데스크톱 설정이 이 기기에도 적용됩니다. " : "")
+                     + "현재 목록 \(store.sites.count)개가 파일의 \(imp.sites.count)개로 바뀝니다." + (imp.skipped > 0 ? " (잘못된 주소 또는 중복 \(imp.skipped)줄은 건너뜀)" : "") + " 확대%는 파일에 적힌 값(없으면 기본 확대% \(Int((store.defaultZoom * 100).rounded()))%)이 됩니다.")
             }
             .alert("알림", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
                 Button("확인") {}
@@ -96,11 +106,14 @@ struct SiteListView: View {
 
     /// 복원할 수 있는 크기일 때만 파일 저장 창을 연다.
     private func startExport() {
-        switch store.exportCSV() {
+        switch store.exportCSV(device: Self.device) {
         case .success(let text): exportText = text; exporting = true
         case .failure(let e): message = describe(e, backup: true)
         }
     }
+
+    /// 지금 기기 (백업 파일 이름과 헤더에 남긴다).
+    private static var device: CSVDevice { UIDevice.current.userInterfaceIdiom == .pad ? .ipad : .iphone }
 
     private static var today: String {
         let f = DateFormatter()
@@ -118,7 +131,7 @@ struct SiteListView: View {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let data = readLimited(url) else { message = "파일을 읽지 못했습니다."; return }
-        switch importCSV(data, defaultZoom: store.defaultZoom) {
+        switch importCSV(data, defaultZoom: store.defaultZoom, fileName: url.lastPathComponent) {
         case .success(let imp): pendingImport = imp
         case .failure(let e): message = describe(e, backup: false)
         }
@@ -151,6 +164,7 @@ struct SiteEditView: View {
     @State private var name = ""
     @State private var urlText = ""
     @State private var zoom = initialDefaultZoom
+    @State private var desktop = false
     @State private var error: String?
 
     var body: some View {
@@ -162,6 +176,7 @@ struct SiteEditView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 zoomStepper("확대", $zoom)
+                Toggle("데스크톱 사이트로 보기", isOn: $desktop)
                 if let error { Text(error).foregroundStyle(.red).font(.caption) }
             }
             .navigationTitle(existing == nil ? "사이트 추가" : "사이트 편집")
@@ -174,6 +189,7 @@ struct SiteEditView: View {
                 name = existing?.name ?? ""
                 urlText = existing?.url.absoluteString ?? ""
                 zoom = existing?.zoom ?? store.defaultZoom
+                desktop = existing?.desktop ?? false
             }
         }
     }
@@ -189,9 +205,10 @@ struct SiteEditView: View {
             s.name = finalName
             s.url = url
             s.zoom = zoom
+            s.desktop = desktop
             store.update(s)
         } else {
-            store.add(name: finalName, url: url, zoom: zoom)
+            store.add(name: finalName, url: url, zoom: zoom, desktop: desktop)
         }
         dismiss()
     }

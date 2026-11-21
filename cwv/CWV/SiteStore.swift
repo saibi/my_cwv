@@ -92,8 +92,8 @@ final class SiteStore: ObservableObject {
     }
 
     /// zoom을 안 주면 옵션의 기본 확대%.
-    func add(name: String, url: URL, zoom: Double? = nil) {
-        sites.append(Site(name: name, url: url, zoom: clampZoom(zoom ?? defaultZoom)))
+    func add(name: String, url: URL, zoom: Double? = nil, desktop: Bool = false) {
+        sites.append(Site(name: name, url: url, zoom: clampZoom(zoom ?? defaultZoom), desktop: desktop))
     }
 
     func update(_ site: Site) {
@@ -117,6 +117,11 @@ final class SiteStore: ObservableObject {
         sites[i].zoom = clampZoom(zoom)
     }
 
+    func setDesktop(_ id: UUID, _ desktop: Bool) {
+        guard let i = sites.firstIndex(where: { $0.id == id }) else { return }
+        sites[i].desktop = desktop
+    }
+
     /// 목록 전체를 바꾼다 (초기화, CSV 복원). 열려 있던 웹뷰는 모두 버린다.
     func replace(with new: [Site]) {
         // 같은 id인데 주소가 달라지는 항목(예: 기본 항목의 주소를 고쳤다가 초기화)은 이전 사이트의 제목 캐시를 버린다
@@ -130,5 +135,5 @@ final class SiteStore: ObservableObject {
     func reset() { replace(with: defaultPages(defaultZoom)) }
 
     /// CSV 백업 내용. 이름이 비어 있는 사이트는 저장된 페이지 타이틀을 이름으로 적는다.
-    func exportCSV() -> Result<String, CSVImportError> { exportCSVChecked(sites, titles: pageTitles) }
+    func exportCSV(device: CSVDevice?) -> Result<String, CSVImportError> { exportCSVChecked(sites, titles: pageTitles, device: device) }
 }

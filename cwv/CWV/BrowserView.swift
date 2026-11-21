@@ -55,6 +55,7 @@ struct BrowserView: View {
             Button("A-  작게") { store.setZoom(site.id, site.zoom - 0.1) }
             Button("100%로") { store.setZoom(site.id, 1.0) }
             Text("현재 \(Int((site.zoom * 100).rounded()))%")
+            Button(site.desktop ? "모바일 사이트로 보기" : "데스크톱 사이트로 보기") { store.setDesktop(site.id, !site.desktop) }
             Button("Safari에서 열기") {
                 UIApplication.shared.open(safariTarget(current: WebCache.view(for: site).web.url, fallback: site.url))
             }

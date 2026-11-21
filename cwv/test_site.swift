@@ -246,8 +246,8 @@ struct TestSite {
             Site(name: "", url: url("https://d.com/a,b")),  // 주소에 쉼표가 있으면 따옴표로 감싼다
             Site(name: "이름", url: url("https://e.com/?q=a,b&r=1")),
         ])
-        assert(exported.hasPrefix("# v2\n") && exported.hasSuffix("\n"))
-        assert(exported.contains("\n\"https://d.com/a,b\",\"\",100\n") && exported.contains("\"https://e.com/?q=a,b&r=1\",\"이름\",100\n"))
+        assert(exported.hasPrefix("# v3\n") && exported.hasSuffix("\n"))
+        assert(exported.contains("\n\"https://d.com/a,b\",\"\",100,m\n") && exported.contains("\"https://e.com/?q=a,b&r=1\",\"이름\",100,m\n"))
         guard case .success(let imp) = importCSV(Data(exported.utf8)) else { fatalError("import failed") }
         assert(imp.sites.map(\.name) == ["", "제목, 쉼표", "줄 바꿈", "", "이름"] && imp.skipped == 0)  // 이름 왕복, 줄바꿈은 공백
         assert(imp.sites.map { $0.url.absoluteString } == ["https://a.com/x", "https://b.com/y?q=1", "https://c.com", "https://d.com/a,b", "https://e.com/?q=a,b&r=1"])  // 쉼표 주소도 손실 없이 왕복 (LST-R4)
@@ -302,7 +302,7 @@ struct TestSite {
         // v2 이스케이프: 이름의 " 와 \ 는 \로 감싸 왕복, 따옴표 없는 손글씨 줄도 허용, 닫히지 않은 따옴표 줄은 건너뜀
         let esc = [Site(name: "그는 \"안녕\" 했다, \\끝", url: url("https://q.com"), zoom: 1.3), Site(name: "\\", url: url("https://r.com"))]
         let escText = exportCSV(esc)
-        assert(escText.contains("https://q.com,\"그는 \\\"안녕\\\" 했다, \\\\끝\",130\n"))
+        assert(escText.contains("https://q.com,\"그는 \\\"안녕\\\" 했다, \\\\끝\",130,m\n"))
         guard case .success(let escBack) = importCSV(Data(escText.utf8)) else { fatalError() }
         assert(escBack.sites.map(\.name) == esc.map(\.name) && escBack.sites.map(\.zoom) == [1.3, 1.0])
         let loose = parseDefaultPages("# v2\nhttps://a.com,손글씨, 이름,130\nhttps://b.com,\"닫히지 않음\nhttps://c.com,\"끝\" x", defaultZoom: 1.2)
@@ -341,13 +341,50 @@ struct TestSite {
         dyn.defaultZoom = 1.4
         dyn.reset()
         assert(dyn.sites.map(\.zoom) == [1.4, 0.9])
-        if case .success(let t) = dyn.exportCSV() { assert(t.contains("https://a.com,\"\",140")) } else { fatalError() }
+        if case .success(let t) = dyn.exportCSV(device: nil) { assert(t.contains("https://a.com,\"\",140,m")) } else { fatalError() }
 
         assert(fallbackSites(defaultZoom: 1.5)[0].zoom == 1.5)  // 기본 목록이 없을 때도 기본 확대% (OPT-R3)
 
         // 주소와 이름이 같아도 확대%가 다르면 복원에서 둘 다 남는다 (OPT-R1)
         guard case .success(let same) = importCSV(Data("# v2\nhttps://g.com,\"GeekNews\",120\nhttps://g.com,\"GeekNews\",180\nhttps://g.com,\"GeekNews\",180\n".utf8)) else { fatalError() }
         assert(same.sites.map(\.zoom) == [1.2, 1.8] && Set(same.sites.map(\.id)).count == 2 && same.skipped == 1)
+
+        // IPD: 사이트별 데스크톱 레이아웃. 이전에 저장된 목록(desktop 키 없음)도 읽히고 기본은 모바일 (IPD-Q5)
+        let oldJSON = #"[{"id":"11111111-1111-1111-1111-111111111111","name":"옛","url":"https://old.com","zoom":1.4}]"#
+        let oldDecoded = try JSONDecoder().decode([Site].self, from: Data(oldJSON.utf8))
+        assert(oldDecoded.count == 1 && oldDecoded[0].name == "옛" && oldDecoded[0].zoom == 1.4 && !oldDecoded[0].desktop)
+        var dsite = oldDecoded[0]; dsite.desktop = true
+        let dback = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode([dsite]))
+        assert(dback[0].desktop)  // 저장/읽기 왕복
+        assert(customUserAgent(desktop: false) == nil && customUserAgent(desktop: true)!.contains("Macintosh") && !customUserAgent(desktop: true)!.contains("Mobile"))
+        let (ud17, clean17) = fresh()
+        defer { clean17() }
+        let st17 = SiteStore(defaults: ud17, backup: .none, defaultPages: pages)
+        st17.add(name: "D", url: url("https://d.example"), desktop: true)
+        st17.add(name: "M", url: url("https://m.example"))
+        assert(st17.sites[st17.sites.count - 2].desktop && !st17.sites.last!.desktop && st17.sites[0].desktop == false)
+        st17.setDesktop(st17.sites[0].id, true)
+        assert(SiteStore(defaults: ud17, backup: .none, defaultPages: pages).sites[0].desktop)  // 재실행 후에도
+        var ed17 = st17.sites[0]; ed17.desktop = false; st17.update(ed17)
+        assert(!st17.sites[0].desktop)
+        // CSV v3: 레이아웃 칸 왕복, v2는 칸이 있어도 무시, device 헤더, 파일 이름 보조 (IPD-Q6/Q7)
+        let lay = [Site(name: "", url: url("https://a.com"), zoom: 1.2, desktop: true), Site(name: "B", url: url("https://b.com"), zoom: 1.0, desktop: false)]
+        let v3 = exportCSV(lay, device: .ipad)
+        assert(v3.hasPrefix("# v3\n# device: ipad\n") && v3.contains("https://a.com,\"\",120,d\n") && v3.contains("https://b.com,\"B\",100,m\n"))
+        guard case .success(let v3i) = importCSV(Data(v3.utf8)) else { fatalError() }
+        assert(v3i.sites.map(\.desktop) == [true, false] && v3i.device == .ipad && csvVersion(v3) == 3)
+        guard case .success(let v2i) = importCSV(Data("# v2\nhttps://a.com,\"x\",120,d\n".utf8)) else { fatalError() }
+        assert(!v2i.sites[0].desktop && v2i.sites[0].zoom == 1.2 && v2i.device == nil)
+        assert(importCSV(Data(exportCSV(lay).utf8)).map { $0.device } == .success(nil))  // 기기를 모르면 헤더 없음
+        assert(importCSV(Data(exportCSV(lay).utf8), fileName: "cwv_sites_2026-11-21-ipad.csv").map { $0.device } == .success(.ipad))  // 파일 이름 보조
+        assert(importCSV(Data(v3.utf8), fileName: "cwv_sites-iphone.csv").map { $0.device } == .success(.ipad))  // 헤더가 파일 이름보다 우선
+        assert(csvDevice("# v3\n# device: IPAD \nhttps://a.com") == .ipad && csvDevice("# device: tv\nhttps://a.com") == nil && csvDevice("https://a.com\n# device: ipad") == nil)
+        assert(backupFileName(date: "2026-11-21", device: .ipad) == "cwv_sites_2026-11-21-ipad" && backupFileName(date: "2026-11-21", device: .iphone) == "cwv_sites_2026-11-21")
+        assert(csvDevice(fromFileName: "a-ipad.csv") == .ipad && csvDevice(fromFileName: "a.csv") == nil && csvDevice(fromFileName: "ipad.csv") == nil)
+        assert(withoutDesktop(lay).allSatisfy { !$0.desktop } && withoutDesktop(lay).map(\.zoom) == [1.2, 1.0])
+        // 주소/이름/확대%가 같아도 레이아웃이 다르면 둘 다 남는다
+        guard case .success(let lay2) = importCSV(Data("# v3\nhttps://g.com,\"G\",120,m\nhttps://g.com,\"G\",120,d\nhttps://g.com,\"G\",120,d\n".utf8)) else { fatalError() }
+        assert(lay2.sites.map(\.desktop) == [false, true] && lay2.skipped == 1)
 
         // JSON 왕복
         let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(pages))

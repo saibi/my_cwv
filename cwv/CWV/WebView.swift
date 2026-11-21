@@ -12,13 +12,18 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate, UIGesture
     private var titleObs: NSKeyValueObservation?
     private let refresh = UIRefreshControl()
 
-    init(base: URL) {
+    /// 데스크톱 사이트로 볼지 (사이트 설정). 바뀌면 apply(desktop:)가 UA를 바꾸고 다시 불러온다.
+    private(set) var desktop: Bool
+
+    init(base: URL, desktop: Bool) {
         self.base = base
+        self.desktop = desktop
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()  // 쿠키/로그인 유지
         // Safari처럼 보이게 한다. 기본 UA에는 Version/Safari 토큰이 없어 일부 사이트와 Cloudflare가 거부할 수 있다.
         config.applicationNameForUserAgent = "Version/18.0 Mobile/15E148 Safari/604.1"
         web = WKWebView(frame: .zero, configuration: config)
+        web.customUserAgent = customUserAgent(desktop: desktop)  // 모바일이면 nil: 위의 기본 UA
         super.init()
         web.navigationDelegate = self
         web.uiDelegate = self
@@ -69,12 +74,22 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate, UIGesture
         web.evaluateJavaScript(js)
     }
 
+    /// 데스크톱/모바일 전환. UA와 콘텐츠 모드(decidePolicyFor)를 바꾸고 지금 페이지를 새 모드로 다시 불러온다.
+    func apply(desktop new: Bool) {
+        guard new != desktop else { return }
+        desktop = new
+        web.customUserAgent = customUserAgent(desktop: new)
+        web.reload()
+    }
+
     func webView(_ w: WKWebView, didFinish navigation: WKNavigation!) { refresh.endRefreshing() }
     func webView(_ w: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { refresh.endRefreshing() }
     func webView(_ w: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { refresh.endRefreshing() }
 
-    func webView(_ w: WKWebView, decidePolicyFor action: WKNavigationAction,
-                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+    func webView(_ w: WKWebView, decidePolicyFor action: WKNavigationAction, preferences: WKWebpagePreferences,
+                 decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
+        preferences.preferredContentMode = desktop ? .desktop : .mobile  // 기기 기본값(iPad는 데스크톱)이 아니라 사이트 설정을 따른다
+        let decisionHandler = { (p: WKNavigationActionPolicy) in decisionHandler(p, preferences) }
         guard let url = action.request.url else { return decisionHandler(.allow) }
         switch url.scheme?.lowercased() ?? "" {
         case "http", "https":
@@ -163,7 +178,7 @@ enum WebCache {
     static func view(for site: Site) -> SiteWebView {
         _ = observer
         if let v = views[site.id] { return v }
-        let v = SiteWebView(base: site.url)
+        let v = SiteWebView(base: site.url, desktop: site.desktop)
         views[site.id] = v
         return v
     }
@@ -196,6 +211,7 @@ struct WebView: UIViewRepresentable {
         v.onTitle = onTitle
         v.reportTitle()
         v.apply(zoom: site.zoom)
+        v.apply(desktop: site.desktop)
     }
 }
 
