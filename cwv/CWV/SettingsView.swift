@@ -26,7 +26,7 @@ struct SettingsView: View {
                             Text(String(format: "%.2fcm", clampJoystickCm(joystickCm))).monospacedDigit().foregroundStyle(.secondary)
                         }
                         Slider(value: Binding(get: { clampJoystickCm(joystickCm) }, set: { joystickCm = clampJoystickCm($0) }),
-                               in: joystickCmRange, step: 0.05) {
+                               in: joystickCmRange, step: joystickCmStep) {
                             Text("조이스틱 감도")
                         } minimumValueLabel: {
                             Text("민감").font(.caption)

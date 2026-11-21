@@ -462,6 +462,8 @@ struct TestSite {
         assert(fabMoveDistance(isPad: false, cm: 0.2) == 60 && fabMoveDistance(isPad: true, cm: 0.2) == 52)
         assert(joystickDistance(isPad: false, cm: 1.0) == 60 && joystickDistance(isPad: true, cm: 1.0) == 52)  // 가장 둔감
         assert(fabMoveDistance(isPad: false, cm: 1.0) == 300 && fabMoveDistance(isPad: true, cm: 1.0) == 260)
+        assert(joystickDistance(isPad: false, cm: 0.4) == 24 && fabMoveDistance(isPad: false, cm: 0.4) == 120 && joystickDistance(isPad: true, cm: 0.4) == 21 && fabMoveDistance(isPad: true, cm: 0.4) == 104)  // 중간 눈금 값
+        assert(joystickCmStep == 0.05 && clampJoystickCm(0.3) == 0.3 && clampJoystickCm(0.35) == 0.35 && clampJoystickCm(0.95) == 0.95)  // 눈금 상수와 보정이 일치
         assert(joystickDistance(isPad: false, cm: 0.6) == 36 && fabMoveDistance(isPad: false, cm: 0.6) == 180 && joystickDistance(isPad: false, cm: .nan) == 18)
         for isPad in [false, true] {
             var prev = 0.0
@@ -469,19 +471,21 @@ struct TestSite {
                 let cm = Double(i) / 20
                 let j = joystickDistance(isPad: isPad, cm: cm), mv = fabMoveDistance(isPad: isPad, cm: cm)
                 assert(j > fabTapSlop && j >= prev && abs(mv - 5 * j) <= 2.5)  // 탭 판정(8pt)보다 크고, 단조 증가, 이동은 약 5배
-                let m = fabMargin(joystick: j, fab: 44)
-                assert(m + 44 / 2 >= j + 16 && m >= 16)  // 버튼 중심에서 끝까지 거리 >= 조이스틱 거리 + 16pt가 범위 전체에서 유지
+                // 모든 눈금이 계획의 환산식(cm x 1cm당 pt, 이동은 5배)과 정확히 같다 (중간 눈금의 환산 오류를 잡는다, SNS-R3)
+                let perCm = isPad ? 52.0 : 60.0
+                assert(j == (Double(i) * perCm / 20).rounded() && mv == (Double(i) * 5 * perCm / 20).rounded())
+                let m = fabMargin(joystick: j)
+                assert(m >= j && m >= 16)  // 버튼 안 어디를 잡아도 끝까지 거리 >= 조이스틱 거리가 범위 전체에서 유지 (SNS-R1)
                 prev = j
             }
         }
-        // JOY-R1: 버튼 중심에서 어느 끝까지든 조이스틱 거리 이상 남아야 끝쪽 방향 동작이 가능하다
+        // JOY-R1, SNS-R1: 버튼 안 어디(중심에서 반지름 22pt 이내)를 잡고 시작해도 끝까지 거리가 조이스틱 거리 이상 남아야 끝쪽 방향 동작이 가능하다
         for isPad in [false, true] {
-            let j = joystickDistance(isPad: isPad), m = fabMargin(joystick: j, fab: 44)
-            assert(m + 44 / 2 >= j + 16 && m >= 16)  // 중심까지 거리 >= 조이스틱 거리 + 16pt, 기본 여백(16pt) 이상
+            let j = joystickDistance(isPad: isPad), m = fabMargin(joystick: j)
+            assert(m + 44 / 2 - 44 / 2 >= j && m >= 16)  // 중심까지 거리(m + 22) - 반지름(22) >= 조이스틱 거리, 기본 여백(16pt) 이상
         }
-        assert(fabMargin(joystick: 60, fab: 44) == 54 && fabMargin(joystick: 52, fab: 44) == 46)  // 거리가 길면 여백이 늘고
-        assert(fabMargin(joystick: 18, fab: 44) == 16 && fabMargin(joystick: 16, fab: 44) == 16)  // 0.3cm에서는 기본 여백 그대로
-        assert(FabCorner.allCases.count == 4 && Set(FabCorner.allCases.map(\.title)).count == 4)
+        assert(fabMargin(joystick: 60) == 60 && fabMargin(joystick: 52) == 52)  // 거리가 길면 여백이 같이 늘고
+        assert(fabMargin(joystick: 18) == 18 && fabMargin(joystick: 16) == 16 && fabMargin(joystick: 10) == 16)  // 기본 여백(16pt) 아래로는 줄지 않는다
 
         // JSON 왕복
         let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(pages))

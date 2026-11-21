@@ -409,6 +409,7 @@ func fabIsTap(maxDisplacement: Double) -> Bool { maxDisplacement < fabTapSlop }
 /// 옵션의 "조이스틱 감도": 조이스틱이 동작하는 최소 이동 거리(cm). 기기별 UserDefaults에 저장하고 CSV 백업에는 넣지 않는다.
 let joystickCmKey = "joystickCm"
 let joystickCmRange = 0.2...1.0
+let joystickCmStep = 0.05
 let defaultJoystickCm = 0.3
 
 /// 1cm에 해당하는 pt. 기기 화면 밀도 기준 근사값 (iPhone 약 60pt, iPad 약 52pt).
@@ -417,7 +418,8 @@ func joystickPtPerCm(isPad: Bool) -> Double { isPad ? 52 : 60 }
 /// 저장된 감도를 안전한 값으로: NaN/무한대는 기본값, 범위로 자르고 0.05cm 단위로 맞춘다 (읽을 때마다 거친다).
 func clampJoystickCm(_ cm: Double) -> Double {
     guard cm.isFinite else { return defaultJoystickCm }
-    return (min(max(cm, joystickCmRange.lowerBound), joystickCmRange.upperBound) * 20).rounded() / 20
+    let n = 1 / joystickCmStep  // 20: 곱하고 나누는 방식이라 0.3 같은 값이 정확히 유지된다 (step을 곱하면 0.30000000000000004가 된다)
+    return (min(max(cm, joystickCmRange.lowerBound), joystickCmRange.upperBound) * n).rounded() / n
 }
 
 /// 조이스틱이 동작하는 최소 이동 거리(pt). 기본 0.3cm에서 iPhone 18pt, iPad 16pt.
@@ -430,9 +432,10 @@ func fabMoveDistance(isPad: Bool, cm: Double = defaultJoystickCm) -> Double {
     (clampJoystickCm(cm) * 5 * joystickPtPerCm(isPad: isPad)).rounded()
 }
 
-/// 버튼을 웹 영역 가장자리에서 띄우는 여백. 버튼 중심에서 어느 쪽 끝까지든 조이스틱 거리보다 16pt 더 남게 하되 기본 여백(16pt) 아래로는 줄이지 않는다.
-/// 손가락은 화면 밖으로 못 나가므로, 끝에 가까우면 끝쪽 방향의 기준 거리에 닿을 수 없다 (JOY-R1).
-func fabMargin(joystick: Double, fab: Double) -> Double { max(16, joystick + 16 - fab / 2) }
+/// 버튼을 웹 영역 가장자리에서 띄우는 여백 = 조이스틱 거리 (기본 여백 16pt 아래로는 줄이지 않는다).
+/// 손가락은 화면 밖으로 못 나가므로 끝에 가까우면 끝쪽 방향의 기준 거리에 닿을 수 없다 (JOY-R1).
+/// 여백이 조이스틱 거리 이상이면 버튼 안 어디(중심에서 반지름 이내)를 잡고 시작해도 끝까지 거리가 조이스틱 거리 이상 남는다 (SNS-R1).
+func fabMargin(joystick: Double) -> Double { max(16, joystick) }
 
 /// 손을 뗀 위치(시작부터의 이동량 dx, dy)로 동작을 정한다. 튕기는 속도는 쓰지 않는다.
 /// move 이상이면 모서리 이동, 최대축 이동이 joystick 미만이면(돌아온 경우 포함) 없음, 그 사이는 더 많이 움직인 축이 방향.

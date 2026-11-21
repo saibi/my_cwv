@@ -28,8 +28,8 @@ struct BrowserView: View {
     private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
     /// 조이스틱 최소 이동(기본 약 0.3cm)과 모서리 이동 기준(그 5배). 옵션의 감도가 바뀌면 바로 반영된다.
     private var joystick: Double { joystickDistance(isPad: isPad, cm: joystickCm) }
-    /// 버튼은 화면 끝에서 조이스틱 거리 이상 안쪽에 둔다. 끝에 붙이면 끝쪽 방향으로 끌 공간이 모자라 뒤로/앞으로/글자 작게 중 일부가 안 된다 (JOY-R1).
-    private var margin: CGFloat { CGFloat(fabMargin(joystick: joystick, fab: Double(fab))) }
+    /// 버튼은 화면 끝에서 조이스틱 거리 이상 안쪽에 둔다 (버튼 안 어디를 잡아도 끝쪽 방향으로 끌 거리가 남도록). 끝에 붙이면 뒤로/앞으로/글자 작게 중 일부가 안 된다 (JOY-R1, SNS-R1).
+    private var margin: CGFloat { CGFloat(fabMargin(joystick: joystick)) }
 
     var body: some View {
         GeometryReader { g in
