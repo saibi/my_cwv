@@ -15,53 +15,60 @@ struct BrowserView: View {
     @State private var external: ExternalLink?
 
     @AppStorage("fabCorner") private var corner = FabCorner.bottomTrailing
-    @State private var drag = CGSize.zero
-    @State private var live = FabAction.none  // 끄는 중에, 지금 놓으면 일어날 동작
-    @State private var moveTarget: FabCorner?  // live == .move일 때 놓으면 가는 모서리
+    // 끄는 중의 이동량. @GestureState라 정상 종료뿐 아니라 시스템이 제스처를 취소해도 자동으로 0으로 돌아온다 (JOY-R2).
+    @GestureState(resetTransaction: Transaction(animation: .easeOut(duration: 0.2))) private var drag = CGSize.zero
     @State private var toast: String?  // 놓은 뒤 결과 (1.2초)
     @State private var toastTask: DispatchWorkItem?
-    private let margin: CGFloat = 16, fab: CGFloat = 44
+    private let fab: CGFloat = 44
 
     /// 약 1cm (JOY). 모서리 이동은 그 3배.
     private var joystick: Double { joystickDistance(isPad: UIDevice.current.userInterfaceIdiom == .pad) }
+    /// 버튼은 화면 끝에서 1cm 이상 안쪽에 둔다. 끝에 붙이면 끝쪽 방향으로 끌 공간이 모자라 뒤로/앞으로/글자 작게 중 일부가 안 된다 (JOY-R1).
+    private var margin: CGFloat { CGFloat(fabMargin(joystick: joystick, fab: Double(fab))) }
 
     var body: some View {
         GeometryReader { g in
+            let live = action(drag)  // 지금 놓으면 일어날 동작
             ZStack(alignment: alignment) {
                 WebView(site: site, onExternal: { external = ExternalLink(url: $0) }, onBack: onSwipe ?? onClose,
                         onTitle: { store.setPageTitle(site.id, $0) }, paneSwipe: paneSwipe)
-                if let t = moveTarget, live == .move {  // 놓으면 가는 모서리 표시
+                if live == .move {  // 놓으면 가는 모서리 표시
                     Circle().strokeBorder(Color.accentColor, lineWidth: 2).frame(width: fab, height: fab)
-                        .position(center(t, in: g.size)).allowsHitTesting(false)
+                        .position(center(target(drag, in: g.size), in: g.size)).allowsHitTesting(false)
                 }
-                menu.overlay(alignment: bubbleAlignment) { bubble }.padding(margin).offset(drag)
+                menu.padding(margin).offset(drag)
                     .simultaneousGesture(DragGesture(minimumDistance: 8)
-                        .onChanged { v in
-                            // 조이스틱: 끄는 동안 버튼이 손가락을 따라가고, 지금 놓으면 일어날 일을 말풍선으로 보인다.
-                            let a = action(v.translation)
-                            if a != live, a != .none { UISelectionFeedbackGenerator().selectionChanged() }
-                            live = a
-                            moveTarget = a == .move ? target(v.translation, in: g.size) : nil
-                            drag = v.translation
+                        .updating($drag) { v, state, _ in state = v.translation }
+                        .onChanged { _ in
+                            // 새 조작이 시작되면 이전 결과 말풍선은 지운다 (JOY-R4)
+                            if toast != nil { toastTask?.cancel(); toast = nil }
                         }
                         .onEnded { v in
                             // 손을 뗀 위치(실제 이동량)로만 판정한다. 튕기는 속도는 쓰지 않는다.
                             let a = action(v.translation)
                             let t = target(v.translation, in: g.size)
-                            live = .none; moveTarget = nil
                             switch a {
                             case .back: navigate(forward: false)
                             case .forward: navigate(forward: true)
                             case .zoomIn: zoom(0.1)
                             case .zoomOut: zoom(-0.1)
-                            case .move: withAnimation { corner = t }
+                            case .move:
+                                if t != corner { show("버튼 위치: \(t.title)") }
+                                withAnimation { corner = t }
                             case .none: break  // 돌아온 경우 포함: 아무 일도 없고 메뉴도 열리지 않는다
                             }
-                            withAnimation { drag = .zero }
                         })
             }
+            // 말풍선은 손가락/버튼에 가리지 않게 웹 영역의 가로 중앙, 버튼의 반대쪽(위/아래) 끝에 둔다 (화면 밖으로 나가지 않음, JOY-R3).
+            .overlay(alignment: buttonInLowerHalf(in: g.size) ? .top : .bottom) { bubble(live).padding(.vertical, 24) }
+            .onChange(of: live) { _, new in if new != .none { UISelectionFeedbackGenerator().selectionChanged() } }
         }
         .sheet(item: $external) { SafariView(url: $0.url).ignoresSafeArea() }
+    }
+
+    /// 지금 버튼(끄는 중이면 손가락 위치)이 웹 영역의 아래쪽 절반에 있는지.
+    private func buttonInLowerHalf(in size: CGSize) -> Bool {
+        center(corner, in: size).y + drag.height > size.height / 2
     }
 
     private func action(_ t: CGSize) -> FabAction { fabAction(dx: t.width, dy: t.height, joystick: joystick, move: joystick * 3) }
@@ -98,7 +105,7 @@ struct BrowserView: View {
     }
 
     /// 끄는 중에는 지금 놓으면 일어날 일, 놓은 뒤에는 결과.
-    private var bubbleText: String? {
+    private func bubbleText(_ live: FabAction) -> String? {
         switch live {
         case .back: return "뒤로"
         case .forward: return "앞으로"
@@ -109,19 +116,13 @@ struct BrowserView: View {
         }
     }
 
-    @ViewBuilder private var bubble: some View {
-        if let text = bubbleText {
+    @ViewBuilder private func bubble(_ live: FabAction) -> some View {
+        if let text = bubbleText(live) {
             Text(text).font(.caption.weight(.semibold)).foregroundStyle(.white).fixedSize()
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(Capsule().fill(Color.black.opacity(0.75)))
-                .offset(y: corner == .topLeading || corner == .topTrailing ? fab / 2 + 20 : -(fab / 2 + 20))  // 화면 안쪽으로
                 .allowsHitTesting(false)
         }
-    }
-
-    /// 말풍선이 화면 밖으로 나가지 않게 버튼과 바깥쪽 끝을 맞춘다.
-    private var bubbleAlignment: Alignment {
-        corner == .topLeading || corner == .bottomLeading ? .leading : .trailing
     }
 
     private var alignment: Alignment {

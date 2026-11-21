@@ -446,10 +446,17 @@ struct TestSite {
         assert(fa(-61, 5) == .back && fa(61, -5) == .forward && fa(5, -61) == .zoomIn && fa(-5, 61) == .zoomOut)  // 방향 (왼쪽 뒤로, 오른쪽 앞으로, 위 크게, 아래 작게)
         assert(fa(-59, 0) == .none && fa(0, -59) == .none && fa(0, 0) == .none && fa(10, -10) == .none)  // 1cm 미만, 돌아온 경우
         assert(fa(-60, 0) == .back && fa(0, 60) == .zoomOut)  // 경계는 포함
+        assert(fa(60, 0) == .forward && fa(0, -60) == .zoomIn && fa(59, 0) == .none && fa(0, 59) == .none && fa(-59, 0) == .none && fa(0, -59) == .none)  // 네 방향 모두 59pt 미동작, 60pt 동작 (JOY-R5)
         assert(fa(-40, -61) == .zoomIn && fa(-70, -70) == .back && fa(70, 70) == .forward)  // 대각선: 더 많이 움직인 축, 같으면 가로
         assert(fa(179, 0) == .forward && fa(180, 0) == .move && fa(130, 130) == .move && fa(100, 100) == .forward)  // 모서리 이동 경계 (거리 기준)
         assert(fa(-180, 0) == .move && fa(0, -200) == .move)
         assert(joystickDistance(isPad: true) == 52 && joystickDistance(isPad: false) == 60)
+        // JOY-R1: 버튼 중심에서 어느 끝까지든 조이스틱 거리 이상 남아야 끝쪽 방향 동작이 가능하다
+        for isPad in [false, true] {
+            let j = joystickDistance(isPad: isPad), m = fabMargin(joystick: j, fab: 44)
+            assert(m + 44 / 2 >= j + 16 && m >= 16)  // 중심까지 거리 >= 1cm + 16pt, 이전 여백(16pt)보다 안쪽
+        }
+        assert(fabMargin(joystick: 60, fab: 44) == 54 && fabMargin(joystick: 52, fab: 44) == 46)
         assert(FabCorner.allCases.count == 4 && Set(FabCorner.allCases.map(\.title)).count == 4)
 
         // JSON 왕복

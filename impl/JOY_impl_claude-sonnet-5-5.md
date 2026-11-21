@@ -8,7 +8,7 @@
 | 파일 | 역할 |
 | :--- | :--- |
 | `Site.swift` | `FabAction`(none/back/forward/zoomIn/zoomOut/move), `joystickDistance(isPad:)`(iPhone 60pt, iPad 52pt), 순수 판정 `fabAction(dx:dy:joystick:move:)`, `FabCorner`에 `CaseIterable`과 `title` |
-| `BrowserView.swift` | 드래그 `onChanged`에서 `live` 동작과 이동 목표 모서리를 갱신하고 말풍선을 보임, `onEnded`에서 손을 뗀 위치(`translation`)로 실행 (`navigate`/`zoom`/모서리 이동), 결과 말풍선 `toast`(1.2초, 취소 가능한 `DispatchWorkItem`), 놓으면 가는 모서리에 윤곽 원, 메뉴에 "뒤로/앞으로/버튼 위치" 추가 |
+| `BrowserView.swift` | 끄는 이동량을 `@GestureState drag`로 받아 `live` 동작과 이동 목표 모서리를 매번 계산해 말풍선/윤곽 원을 보임, `onEnded`에서 손을 뗀 위치(`translation`)로 실행 (`navigate`/`zoom`/모서리 이동), 결과 말풍선 `toast`(1.2초, 취소 가능한 `DispatchWorkItem`), 말풍선은 웹 영역 가로 중앙의 버튼 반대쪽 끝, 버튼 여백 `margin` = `fabMargin`, 메뉴에 "뒤로/앞으로/버튼 위치" 추가 |
 | `cwv/Version.xcconfig` | 0.2.0 |
 
 흐름: 끌기 -> `action(translation)`(= `fabAction`, 1cm=`joystickDistance`, 이동=3배) -> `live`/말풍선 -> 손 떼면 같은 판정으로 실행.
@@ -16,18 +16,24 @@
 ## 핵심 설계 결정
 - 판정은 손을 뗀 위치의 실제 이동량으로만, 튕기는 속도(`predictedEndTranslation`)는 쓰지 않는다 - 기존 PRS의 튕기기는 8pt만 끌어도 모서리로 가서 조이스틱과 공존할 수 없고, 속도를 쓰면 짧게 휙 움직여도 동작한다.
 - 판정을 순수 함수로 분리 - 터치를 시뮬레이터에서 시험할 수 없어(입력 주입 도구 없음) 경계값은 `test_site.swift`로 고정한다.
-- 끄는 동안 "지금 놓으면 일어날 일"을 버튼 옆 말풍선으로 보이고(놓은 뒤에는 결과), 모서리 이동이면 목표 모서리에 윤곽 원을 그린다 - 메뉴가 안 뜨는 조작이라 피드백이 없으면 무슨 일이 일어났는지/취소됐는지 알 수 없다. 말풍선은 버튼의 바깥쪽 끝에 맞추고 화면 안쪽으로 20pt 띄워 화면 밖으로 나가지 않게 한다.
+- 끄는 동안 "지금 놓으면 일어날 일"을 말풍선으로 보이고(놓은 뒤에는 결과), 모서리 이동이면 목표 모서리에 윤곽 원을 그린다 - 메뉴가 안 뜨는 조작이라 피드백이 없으면 무슨 일이 일어났는지/취소됐는지 알 수 없다. 말풍선은 버튼에 붙이지 않고 웹 영역 가로 중앙의 버튼 반대쪽(위/아래) 끝에 둔다 (리뷰 JOY-R3: 버튼을 따라가면 끄는 위치에 따라 화면 밖으로 나간다).
+- 버튼을 화면 끝에서 안쪽으로 띄운다 (`fabMargin`: iPhone 54pt, iPad 46pt) - 손가락은 화면 밖으로 못 나가서, 기본 위치(끝에서 38pt)에서는 끝쪽 방향(앞으로, 글자 작게)이 1cm 기준에 닿을 수 없다 (리뷰 JOY-R1, D1 (b)).
+- 끄는 이동량을 `@GestureState`로 - 시스템이 제스처를 취소해도 버튼/윤곽이 남지 않는다 (JOY-R2).
 - `Menu`와 `simultaneousGesture(DragGesture(minimumDistance: 8))`는 그대로 둔다 - UXP/PRS에서 이미 실기기로 쓰고 있어, 끌었다 놓을 때 메뉴가 같이 열리지 않는 것은 같은 경로다. 이번 "돌아와서 놓음"도 같은 경로로 기대하지만 이 환경에서는 시험하지 못했다.
 - 1cm = iPhone 60pt, iPad 52pt - 화면 밀도(pt/inch)에서 계산한 근사값이다 (iPad mini는 실제로 조금 더 길다).
 
 ## 진행 기록
 - JOY-M1: `fabAction`/`joystickDistance`/`FabCorner` 확장을 `build/test_site`에 검증 추가 (방향, 1cm 미만/돌아온 경우, 경계 포함, 대각선, 모서리 이동 경계 179/180pt, 기기별 거리, 모서리 4개 이름 중복 없음), 통과.
+- 교차리뷰 후: R1 버튼 여백(`fabMargin`), R2 `@GestureState`, R3 말풍선 위치, R4 이전 결과 지우기, R5 테스트 보강 (review/JOY_refine_claude-sonnet-5-5.md).
 - JOY-M2: `BrowserView` 제스처/말풍선/메뉴 구현. iPhone/iPad 시뮬레이터 빌드 성공, iPad에서 앱 실행 후 화면 정상 (스크린샷).
 
 ## 계획 대비 변경
 | 항목 | 계획 | 최종 구현 | 상황과 근본 이유 |
 | :--- | :--- | :--- | :--- |
 | 햅틱 | (명시 없음) | 동작이 바뀔 때 가벼운 선택 햅틱 | 임계 거리를 넘었는지 손끝으로 알 수 있게 (코드 한 줄) |
+| 버튼 여백 | (명시 없음, 기존 16pt) | `fabMargin` (iPhone 54pt, iPad 46pt) | 리뷰 JOY-R1: 기존 여백에서는 끝쪽 방향이 기준 거리에 닿을 수 없다 |
+| 말풍선 위치 | 버튼 옆 | 웹 영역 가로 중앙, 버튼 반대쪽 끝 | 리뷰 JOY-R3: 버튼을 따라가면 화면 밖으로 나간다 |
+| 모서리 이동 결과 | (명시 없음) | "버튼 위치: ..." 1.2초 | 리뷰 JOY-R4: 결과 표시가 일관되게 |
 
 ## 검증 결과
 - `build/test_site` 통과, iPhone/iPad 시뮬레이터 빌드 성공, iPad 시뮬레이터에서 실행 정상.
@@ -36,4 +42,5 @@
 ## 남은 한계
 - 가장 가까운 모서리가 지금 모서리면 멀리 끌어도 제자리다.
 - 1cm는 기기 종류별 근사값이다 (기기마다 정확한 cm는 아님).
+- 버튼이 화면 끝에서 약 1.5cm 안쪽에 있어 페이지 내용을 더 가린다. 끌기 시작 위치가 버튼 중심에서 약 16pt 넘게 벗어나면 끝쪽 방향 기준에 못 닿을 수 있다.
 - 스와이프(SWB)는 그대로이고, 조이스틱과 스와이프의 동작이 둘 다 남는다.
