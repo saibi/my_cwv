@@ -94,9 +94,12 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate, UIGesture
         }
     }
 
+    /// 가장자리 팬은 웹뷰의 스크롤 팬과 동시에 인식된다 (스크롤 팬이 먼저 잡아 천천히 밀 때 놓치지 않게).
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { g is PaneEdgePan }
+
     func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
         // 가장자리 팬은 가로가 우세하고 방향이 맞을 때만 시작한다 (세로면 스크롤에, 틀린 방향이면 웹 콘텐츠에 양보)
-        if let p = g as? PaneEdgePan { let v = p.velocity(in: web); return paneSwipeStarts(canBack: p.canBack, canForward: p.canForward, vx: v.x, vy: v.y) }
+        if let p = g as? PaneEdgePan { let t = p.translation(in: web); return paneSwipeStarts(canBack: p.canBack, canForward: p.canForward, dx: t.x, dy: t.y) }
         return !web.canGoBack
     }
 

@@ -376,12 +376,9 @@ struct TestSite {
         guard case .success(let v2i) = importCSV(Data("# v2\nhttps://a.com,\"x\",120,d\n".utf8)) else { fatalError() }
         assert(!v2i.sites[0].desktop && v2i.sites[0].zoom == 1.2 && v2i.device == nil)
         assert(importCSV(Data(exportCSV(lay).utf8)).map { $0.device } == .success(nil))  // 기기를 모르면 헤더 없음
-        assert(importCSV(Data(exportCSV(lay).utf8), fileName: "cwv_sites_2026-11-21-ipad.csv").map { $0.device } == .success(.ipad))  // 파일 이름 보조
-        assert(importCSV(Data(exportCSV(lay, device: .iphone).utf8), fileName: "cwv_sites-ipad.csv").map { $0.device } == .success(.iphone))  // 헤더가 파일 이름보다 우선
         assert(csvDevice("# v3\n# device: IPAD \nhttps://a.com") == .ipad && csvDevice("# device: tv\nhttps://a.com") == nil && csvDevice("https://a.com\n# device: ipad") == nil)
         assert(csvDevice("# device: tv\n# device: ipad\nhttps://a.com") == .ipad)  // 잘못된 값이 뒤의 유효한 헤더를 가리지 않는다 (IPD-R5)
-        assert(backupFileName(date: "2026-11-21", device: .ipad) == "cwv_sites_2026-11-21-ipad" && backupFileName(date: "2026-11-21", device: .iphone) == "cwv_sites_2026-11-21")
-        assert(csvDevice(fromFileName: "a-ipad.csv") == .ipad && csvDevice(fromFileName: "a-iphone.csv") == nil && csvDevice(fromFileName: "a.csv") == nil && csvDevice(fromFileName: "ipad.csv") == nil)
+        assert(backupFileName(date: "2026-11-21") == "cwv_sites_2026-11-21")  // 기기 표시는 파일 안 헤더만 (파일 이름에 붙이지 않는다)
         assert(withoutDesktop(lay).allSatisfy { !$0.desktop } && withoutDesktop(lay).map(\.zoom) == [1.2, 1.0])
         // 데스크톱 설정을 빼면 같아지는 항목은 합친다 (IPD-R3)
         let pair = [Site(name: "G", url: url("https://g.com"), zoom: 1.2, desktop: false), Site(name: "G", url: url("https://g.com"), zoom: 1.2, desktop: true), Site(name: "G", url: url("https://g.com"), zoom: 1.5, desktop: true)]
@@ -426,6 +423,8 @@ struct TestSite {
         assert(ps(30, dx: 120) == nil)  // 가장자리 밖에서 시작
         assert(ps(10, minX: 0, w: 1194, dx: 120) == nil)  // 웹뷰가 화면 왼쪽 끝이면 WebKit 기본 제스처 (이중 이동 방지)
         assert(ps(10, dx: 30) == nil && ps(10, dx: 30, vx: 600) == .back)  // 이동량 또는 속도 기준
+        assert(ps(10, dx: 60) == .back && ps(10, dx: 40) == nil)  // 천천히 밀어도 50pt를 넘으면 이동 (SWB 후속: 느린 스와이프)
+        assert(ps(10, dx: 20, vx: 350) == .back && ps(10, dx: 20, vx: 250) == nil)  // 속도 기준 300pt/s
         assert(ps(10, dx: -120) == nil)  // 왼쪽 가장자리에서 왼쪽으로는 아무것도 아님
         assert(ps(10, dx: 30, vx: -600) == nil && ps(850, minX: 0, dx: -30, vx: 600) == nil)  // 짧게 밀었다가 반대로 튕기면 취소 (SWB-R4/D1)
         assert(ps(10, dx: 100, dy: 200) == nil)  // 세로 우세는 스크롤
@@ -437,10 +436,12 @@ struct TestSite {
         assert(ps(850, minX: 0, dx: -100, dy: 200) == nil)
 
         // SWB-R2: 방향이 맞을 때만 시작
-        assert(paneSwipeStarts(canBack: true, canForward: false, vx: 200, vy: 10) && !paneSwipeStarts(canBack: true, canForward: false, vx: -200, vy: 10))
-        assert(paneSwipeStarts(canBack: false, canForward: true, vx: -200, vy: 10) && !paneSwipeStarts(canBack: false, canForward: true, vx: 200, vy: 10))
-        assert(!paneSwipeStarts(canBack: true, canForward: false, vx: 50, vy: 200) && !paneSwipeStarts(canBack: false, canForward: false, vx: 200, vy: 0))
-        assert(paneSwipeStarts(canBack: true, canForward: true, vx: 200, vy: 0) && paneSwipeStarts(canBack: true, canForward: true, vx: -200, vy: 0))
+        // 시작 판단은 속도가 아니라 이동량(dx, dy)으로 한다: 느리게 밀어 이동량이 10pt 안팎일 때도 인식된다
+        assert(paneSwipeStarts(canBack: true, canForward: false, dx: 10, dy: 2) && !paneSwipeStarts(canBack: true, canForward: false, dx: -10, dy: 2))
+        assert(paneSwipeStarts(canBack: false, canForward: true, dx: -10, dy: 2) && !paneSwipeStarts(canBack: false, canForward: true, dx: 10, dy: 2))
+        assert(!paneSwipeStarts(canBack: true, canForward: false, dx: 5, dy: 20) && !paneSwipeStarts(canBack: false, canForward: false, dx: 10, dy: 0))
+        assert(paneSwipeStarts(canBack: true, canForward: true, dx: 10, dy: 0) && paneSwipeStarts(canBack: true, canForward: true, dx: -10, dy: 0))
+        assert(paneSwipeStarts(canBack: true, canForward: false, dx: 8, dy: 8))  // 대각선에 가까워도 가로가 같거나 크면 시작
 
         // JSON 왕복
         let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(pages))

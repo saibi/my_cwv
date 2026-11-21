@@ -81,7 +81,7 @@ struct SiteListView: View {
             .sheet(item: $editing) { SiteEditView(existing: $0.existing) }
             .sheet(isPresented: $showSettings) { SettingsView() }
             .fileExporter(isPresented: $exporting, document: CSVDocument(text: exportText),
-                          contentType: .commaSeparatedText, defaultFilename: backupFileName(date: Self.today, device: Self.device)) { result in
+                          contentType: .commaSeparatedText, defaultFilename: backupFileName(date: Self.today)) { result in
                 switch result {
                 case .success: message = "백업했습니다. 파일 앱에서 저장한 위치를 확인하세요."
                 case .failure(let e): message = "백업하지 못했습니다: \(e.localizedDescription)"
@@ -148,7 +148,7 @@ struct SiteListView: View {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let data = readLimited(url) else { message = "파일을 읽지 못했습니다."; return }
-        switch importCSV(data, defaultZoom: store.defaultZoom, fileName: url.lastPathComponent) {
+        switch importCSV(data, defaultZoom: store.defaultZoom) {
         case .success(let imp): pendingImport = imp
         case .failure(let e): message = describe(e, backup: false)
         }

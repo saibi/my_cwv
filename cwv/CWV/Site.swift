@@ -32,19 +32,11 @@ func customUserAgent(desktop: Bool) -> String? {
     desktop ? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15" : nil
 }
 
-/// 백업을 만든 기기. 파일 이름 끝(`-ipad`)과 파일 안 `# device:` 주석으로 남긴다.
+/// 백업을 만든 기기. 파일 안 `# device:` 주석으로 남긴다 (파일 이름은 바뀔 수 있어 쓰지 않는다).
 enum CSVDevice: String { case iphone, ipad }
 
-/// 백업 기본 파일 이름 (확장자 제외). iPad는 끝에 `-ipad`.
-func backupFileName(date: String, device: CSVDevice) -> String {
-    "cwv_sites_\(date)" + (device == .ipad ? "-ipad" : "")
-}
-
-/// 파일 이름 끝에서 기기 표시를 읽는다 (보조 수단: 파일 이름은 바뀔 수 있다).
-func csvDevice(fromFileName name: String) -> CSVDevice? {
-    let base = (name as NSString).deletingPathExtension.lowercased()
-    return base.hasSuffix("-ipad") ? .ipad : nil  // iPhone 백업은 접미사가 없다 (IPD-Q7)
-}
+/// 백업 기본 파일 이름 (확장자 제외).
+func backupFileName(date: String) -> String { "cwv_sites_\(date)" }
 
 /// 첫 데이터 줄 앞의 주석 `# key: 값`들의 값(소문자)을 위에서부터 모은다. 데이터 줄 뒤의 주석은 보지 않는다 (외부 파일).
 func csvHeader(_ text: String, key: String) -> [String] {
@@ -158,19 +150,25 @@ let paneSwipeEdge = 24.0
 
 /// 웹뷰 자신의 가장자리(24pt)에서 시작한 가로 스와이프를 뒤로/앞으로로 해석한다.
 /// 웹뷰의 그쪽 끝이 화면(창) 끝에 닿아 있으면 WebKit 기본 제스처가 이미 처리하므로 nil (이중 이동 방지).
-/// 이동량/속도 기준은 shouldCloseOnEdgeSwipe와 같다. startX는 웹뷰 안의 x, viewMinX/screenWidth는 창 좌표.
+/// 이동량/속도 기준은 paneSwipeDone. startX는 웹뷰 안의 x, viewMinX/screenWidth는 창 좌표.
 func paneSwipe(startX: Double, viewWidth: Double, viewMinX: Double, screenWidth: Double, dx: Double, dy: Double, vx: Double) -> PaneSwipe? {
     guard abs(dx) > abs(dy) else { return nil }
     let atLeft = viewMinX <= 1, atRight = screenWidth - (viewMinX + viewWidth) <= 1
-    if dx > 0, startX <= paneSwipeEdge, !atLeft, shouldCloseOnEdgeSwipe(translation: dx, velocity: vx) { return .back }
-    if dx < 0, startX >= viewWidth - paneSwipeEdge, !atRight, shouldCloseOnEdgeSwipe(translation: -dx, velocity: -vx) { return .forward }
+    if dx > 0, startX <= paneSwipeEdge, !atLeft, paneSwipeDone(translation: dx, velocity: vx) { return .back }
+    if dx < 0, startX >= viewWidth - paneSwipeEdge, !atRight, paneSwipeDone(translation: -dx, velocity: -vx) { return .forward }
     return nil
 }
 
 /// 가장자리 팬을 시작할지: 가로가 우세하고, 시작한 쪽이 허용하는 방향(왼쪽 끝=오른쪽으로 뒤로, 오른쪽 끝=왼쪽으로 앞으로)일 때만.
 /// 방향이 틀린 드래그(예: 왼쪽 끝의 슬라이더를 왼쪽으로)는 웹 콘텐츠의 터치를 취소시키지 않도록 시작하지 않는다 (SWB-R2).
-func paneSwipeStarts(canBack: Bool, canForward: Bool, vx: Double, vy: Double) -> Bool {
-    abs(vx) > abs(vy) && ((canBack && vx > 0) || (canForward && vx < 0))
+/// dx/dy는 시작부터의 이동량이다. 속도는 천천히 밀면 시작 순간에 작고 흔들려서 방향 판단에 쓰면 빠르게 밀 때만 인식된다.
+func paneSwipeStarts(canBack: Bool, canForward: Bool, dx: Double, dy: Double) -> Bool {
+    abs(dx) >= abs(dy) && ((canBack && dx > 0) || (canForward && dx < 0))
+}
+
+/// 가장자리 스와이프를 이동으로 인정하는 기준: 천천히 밀어도 되도록 거리 50pt, 또는 그 방향으로 300pt/s.
+func paneSwipeDone(translation: Double, velocity: Double) -> Bool {
+    translation > 50 || velocity > 300
 }
 
 let zoomRange = 0.5...3.0
@@ -347,7 +345,7 @@ enum CSVImportError: Error, Equatable { case tooLarge, notUTF8, tooManyLines, no
 struct CSVImport {
     var sites: [Site]
     var skipped: Int  // 잘못된 주소나 중복이라 건너뛴 줄 수
-    var device: CSVDevice?  // 백업을 만든 기기 (파일 안 표시 > 파일 이름 끝, 모르면 nil)
+    var device: CSVDevice?  // 백업을 만든 기기 (파일 안 `# device:`, 없으면 nil)
     var sidebar = SidebarLayout.Partial()  // iPad 분할 화면 설정 (파일에 있는 것만)
 }
 
@@ -370,14 +368,14 @@ func readLimited(_ url: URL) -> Data? {
 }
 
 /// 가져온 CSV 파일 검사와 해석. 외부 파일이므로 크기/줄 수 제한을 두고, 각 줄은 normalizeURL로 검증한다.
-func importCSV(_ data: Data, defaultZoom: Double = 1.0, fileName: String? = nil) -> Result<CSVImport, CSVImportError> {
+func importCSV(_ data: Data, defaultZoom: Double = 1.0) -> Result<CSVImport, CSVImportError> {
     guard data.count <= csvImportMaxBytes else { return .failure(.tooLarge) }
     guard let text = String(data: data, encoding: .utf8) else { return .failure(.notUTF8) }
     let lines = csvDataLines(text)
     guard lines.count <= csvImportMaxLines else { return .failure(.tooManyLines) }
     let sites = parseSites(lines, version: csvVersion(text), keepDuplicates: true, defaultZoom: defaultZoom)
     guard !sites.isEmpty else { return .failure(.noValidLines) }
-    return .success(CSVImport(sites: sites, skipped: lines.count - sites.count, device: csvDevice(text) ?? fileName.flatMap(csvDevice(fromFileName:)), sidebar: csvSidebar(text)))
+    return .success(CSVImport(sites: sites, skipped: lines.count - sites.count, device: csvDevice(text), sidebar: csvSidebar(text)))
 }
 
 /// Safari로 열 주소: 지금 보는 페이지가 http/https면 그것, 아니면 사이트 기본 주소.
