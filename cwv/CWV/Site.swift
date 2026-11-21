@@ -35,6 +35,17 @@ func clampZoom(_ z: Double) -> Double {
     (min(max(z, zoomRange.lowerBound), zoomRange.upperBound) * 10).rounded() / 10
 }
 
+/// 앱을 처음 설치했을 때의 기본 확대% (옵션에서 바꾼다).
+let initialDefaultZoom = 1.2
+
+/// CSV의 확대% 토큰("120" 또는 "120%") -> 배율(1.2). 숫자가 아니면 nil. 범위 밖이면 clampZoom으로 맞춘다.
+func parseZoomToken(_ raw: String) -> Double? {
+    var t = raw.trimmingCharacters(in: .whitespaces)
+    if t.hasSuffix("%") { t.removeLast(); t = t.trimmingCharacters(in: .whitespaces) }
+    guard !t.isEmpty, t.allSatisfy({ $0.isNumber && $0.isASCII || $0 == "." }), let v = Double(t) else { return nil }
+    return clampZoom(v / 100)
+}
+
 /// 입력 문자열을 http/https URL로 정규화한다. 허용되지 않으면 nil.
 func normalizeURL(_ input: String) -> URL? {
     let s = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -106,37 +117,47 @@ private func splitLine(_ line: String) -> (url: String, title: String)? {
     return nil
 }
 
-/// 한 줄에 `주소[,제목]`. 제목이 없으면 name은 빈 문자열(표시할 때 페이지 타이틀, 없으면 도메인). 잘못된 줄은 건너뛴다.
+/// 주소 뒤의 나머지(`이름[,확대%]`)를 (이름, 확대%)로 나눈다. 마지막 쉼표 뒤가 확대%로 읽히면 그것을 떼고, 아니면 전부 이름이다.
+private func splitNameZoom(_ rest: String) -> (name: String, zoom: Double?) {
+    guard let comma = rest.lastIndex(of: ","), let z = parseZoomToken(String(rest[rest.index(after: comma)...])) else { return (rest, nil) }
+    return (rest[..<comma].trimmingCharacters(in: .whitespaces), z)
+}
+
+/// 한 줄에 `주소[,이름[,확대%]]`. 이름이 없으면 name은 빈 문자열(표시할 때 페이지 타이틀, 없으면 도메인). 확대%가 없으면 defaultZoom.
+/// 잘못된 줄은 건너뛴다.
 /// keepDuplicates가 false(기본 목록)면 같은 주소는 첫 줄만 남긴다. true(백업 복원)면 주소가 같아도 이름이 다르면 모두 남기고
 /// (주소와 이름이 모두 같은 줄만 제거) 같은 주소의 두 번째 항목부터는 새 id를 준다.
-private func parseSites(_ lines: [String], keepDuplicates: Bool = false) -> [Site] {
+private func parseSites(_ lines: [String], keepDuplicates: Bool = false, defaultZoom: Double) -> [Site] {
     var seenIDs = Set<UUID>(), seenPairs = Set<String>()
     return lines.compactMap { line in
-        guard let (urlText, title) = splitLine(line), let url = normalizeURL(urlText) else { return nil }
+        guard let (urlText, rest) = splitLine(line), let url = normalizeURL(urlText) else { return nil }
+        let (name, zoom) = splitNameZoom(rest)
         var id = stableID(for: url)
         if keepDuplicates {
-            guard seenPairs.insert(url.absoluteString + "\u{0}" + title).inserted else { return nil }
+            guard seenPairs.insert(url.absoluteString + "\u{0}" + name).inserted else { return nil }
             if !seenIDs.insert(id).inserted { id = UUID() }
         } else {
             guard seenIDs.insert(id).inserted else { return nil }
         }
-        return Site(id: id, name: title, url: url)
+        return Site(id: id, name: name, url: url, zoom: zoom ?? clampZoom(defaultZoom))
     }
 }
 
-/// default_page.csv 해석 (앱 첫 실행과 초기화에 쓰는 기본 목록).
-func parseDefaultPages(_ text: String) -> [Site] { parseSites(csvDataLines(text)) }
+/// default_page.csv 해석 (앱 첫 실행과 초기화에 쓰는 기본 목록). 확대%가 없는 줄은 defaultZoom.
+func parseDefaultPages(_ text: String, defaultZoom: Double = 1.0) -> [Site] { parseSites(csvDataLines(text), defaultZoom: defaultZoom) }
 
-/// 목록을 CSV로 (default_page.csv와 같은 형식, 글자 크기는 넣지 않는다). 이름이 비어 있으면 주소만 쓴다.
+/// 목록을 CSV로: 한 줄에 `주소,이름,확대%`. 이름이 비어 있으면 titles(사이트 id -> 저장해 둔 페이지 타이틀)의 값을 쓰고, 그것도 없으면 빈 칸.
 /// 주소에 쉼표나 따옴표가 있으면 주소를 따옴표로 감싸고(안의 따옴표는 두 개) 손실 없이 보존한다. 이름의 줄바꿈은 공백으로 바꾼다.
-func exportCSV(_ sites: [Site]) -> String {
+func exportCSV(_ sites: [Site], titles: [String: String] = [:]) -> String {
     let lines = sites.map { s -> String in
         var u = s.url.absoluteString
         if u.contains(",") || u.contains("\"") { u = "\"" + u.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
-        let n = s.name.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespaces)
-        return n.isEmpty ? u : "\(u),\(n)"
+        var n = s.name.trimmingCharacters(in: .whitespaces)
+        if n.isEmpty { n = titles[s.id.uuidString] ?? "" }
+        n = n.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        return "\(u),\(n),\(Int((s.zoom * 100).rounded()))"
     }
-    return (["# CWV site list: one line per site, url[,name]"] + lines).joined(separator: "\n") + "\n"
+    return (["# CWV site list: one line per site, url,name,zoom%"] + lines).joined(separator: "\n") + "\n"
 }
 
 enum CSVImportError: Error, Equatable { case tooLarge, notUTF8, tooManyLines, noValidLines }
@@ -150,9 +171,9 @@ let csvImportMaxBytes = 1_000_000
 let csvImportMaxLines = 500
 
 /// 내보내기 전 검사: 가져오기 제한(크기/줄 수)을 넘는 파일은 만들지 않는다. 백업해 놓고 복원할 수 없는 일을 막는다.
-func exportCSVChecked(_ sites: [Site]) -> Result<String, CSVImportError> {
+func exportCSVChecked(_ sites: [Site], titles: [String: String] = [:]) -> Result<String, CSVImportError> {
     guard sites.count <= csvImportMaxLines else { return .failure(.tooManyLines) }
-    let text = exportCSV(sites)
+    let text = exportCSV(sites, titles: titles)
     return text.utf8.count <= csvImportMaxBytes ? .success(text) : .failure(.tooLarge)
 }
 
@@ -165,12 +186,12 @@ func readLimited(_ url: URL) -> Data? {
 }
 
 /// 가져온 CSV 파일 검사와 해석. 외부 파일이므로 크기/줄 수 제한을 두고, 각 줄은 normalizeURL로 검증한다.
-func importCSV(_ data: Data) -> Result<CSVImport, CSVImportError> {
+func importCSV(_ data: Data, defaultZoom: Double = 1.0) -> Result<CSVImport, CSVImportError> {
     guard data.count <= csvImportMaxBytes else { return .failure(.tooLarge) }
     guard let text = String(data: data, encoding: .utf8) else { return .failure(.notUTF8) }
     let lines = csvDataLines(text)
     guard lines.count <= csvImportMaxLines else { return .failure(.tooManyLines) }
-    let sites = parseSites(lines, keepDuplicates: true)
+    let sites = parseSites(lines, keepDuplicates: true, defaultZoom: defaultZoom)
     guard !sites.isEmpty else { return .failure(.noValidLines) }
     return .success(CSVImport(sites: sites, skipped: lines.count - sites.count))
 }

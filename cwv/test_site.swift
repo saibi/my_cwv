@@ -247,7 +247,7 @@ struct TestSite {
             Site(name: "이름", url: url("https://e.com/?q=a,b&r=1")),
         ])
         assert(exported.hasPrefix("# CWV site list") && exported.hasSuffix("\n"))
-        assert(exported.contains("\n\"https://d.com/a,b\"\n") && exported.contains("\"https://e.com/?q=a,b&r=1\",이름\n"))
+        assert(exported.contains("\n\"https://d.com/a,b\",,100\n") && exported.contains("\"https://e.com/?q=a,b&r=1\",이름,100\n"))
         guard case .success(let imp) = importCSV(Data(exported.utf8)) else { fatalError("import failed") }
         assert(imp.sites.map(\.name) == ["", "제목, 쉼표", "줄 바꿈", "", "이름"] && imp.skipped == 0)  // 이름 왕복, 줄바꿈은 공백
         assert(imp.sites.map { $0.url.absoluteString } == ["https://a.com/x", "https://b.com/y?q=1", "https://c.com", "https://d.com/a,b", "https://e.com/?q=a,b&r=1"])  // 쉼표 주소도 손실 없이 왕복 (LST-R4)
@@ -288,7 +288,48 @@ struct TestSite {
         let st13 = SiteStore(defaults: ud10, backup: .none, defaultPages: pages)
         st13.setZoom(st13.sites[0].id, 2.0)
         st13.replace(with: imp.sites)
-        assert(st13.sites.map(\.name) == ["", "제목, 쉼표", "줄 바꿈", "", "이름"] && st13.sites.allSatisfy { $0.zoom == 1.0 })
+        assert(st13.sites.map(\.name) == ["", "제목, 쉼표", "줄 바꿈", "", "이름"] && st13.sites.allSatisfy { $0.zoom == 1.0 })  // 파일에 적힌 100%
+
+        // OPT: 확대% 토큰, 3/2/1칸 해석, 이름 쉼표, 범위 밖
+        assert(parseZoomToken("120") == 1.2 && parseZoomToken(" 120% ") == 1.2 && parseZoomToken("10") == 0.5 && parseZoomToken("999") == 3.0)
+        assert(parseZoomToken("") == nil && parseZoomToken("abc") == nil && parseZoomToken("-5") == nil && parseZoomToken("%") == nil)
+        let z = parseDefaultPages("https://a.com,이름,150\nhttps://b.com,제목, 쉼표,80%\nhttps://c.com,,200\nhttps://d.com,이름만\nhttps://e.com\nhttps://f.com,쉼표, 포함\nhttps://g.com,x,9999", defaultZoom: 1.2)
+        assert(z.map(\.name) == ["이름", "제목, 쉼표", "", "이름만", "", "쉼표, 포함", "x"])
+        assert(z.map(\.zoom) == [1.5, 0.8, 2.0, 1.2, 1.2, 1.2, 3.0])  // 칸이 없으면 기본 확대%, 범위 밖은 보정
+        // 백업: 이름이 비면 저장된 타이틀, 확대% 포함. 복원하면 이름과 확대%가 그대로 (OPT-Q2)
+        let src = [Site(name: "", url: url("https://a.com"), zoom: 1.5), Site(name: "직접", url: url("https://b.com"), zoom: 0.8), Site(name: "", url: url("https://c.com"), zoom: 1.2)]
+        let titled = exportCSV(src, titles: [src[0].id.uuidString: "A\n타이틀, 쉼표", src[1].id.uuidString: "무시"])
+        guard case .success(let rt) = importCSV(Data(titled.utf8), defaultZoom: 2.0) else { fatalError("roundtrip failed") }
+        assert(rt.sites.map(\.name) == ["A 타이틀, 쉼표", "직접", ""] && rt.sites.map(\.zoom) == [1.5, 0.8, 1.2])
+        // 옛 2칸 백업과 기본 목록은 기본 확대%
+        assert(importCSV(Data("https://a.com,이름\n".utf8), defaultZoom: 1.2).map { $0.sites[0].zoom } == .success(1.2))
+
+        // 기본 확대% 옵션: 기본 120%, 저장되어 유지, 범위 보정, 새 사이트에 적용 (OPT-M1)
+        let (ud16, clean16) = fresh()
+        defer { clean16() }
+        let st16 = SiteStore(defaults: ud16, backup: .none, defaultPages: pages)
+        assert(st16.defaultZoom == 1.2)
+        st16.add(name: "N", url: url("https://n.com"))
+        assert(st16.sites.last!.zoom == 1.2 && st16.sites[0].zoom == 1.0)  // 기존 항목은 그대로
+        st16.defaultZoom = 1.5
+        st16.add(name: "M", url: url("https://m.com"))
+        st16.add(name: "P", url: url("https://p.com"), zoom: 0.7)
+        assert(st16.sites[st16.sites.count - 2].zoom == 1.5 && st16.sites.last!.zoom == 0.7)
+        assert(SiteStore(defaults: ud16, backup: .none, defaultPages: pages).defaultZoom == 1.5)
+        ud16.set(9.0, forKey: "defaultZoom")
+        assert(SiteStore(defaults: ud16, backup: .none, defaultPages: pages).defaultZoom == 3.0)
+        // 주소, 이름, 확대%를 한 번에 편집
+        var e16 = st16.sites[0]
+        e16.name = "새 이름"; e16.url = url("https://new.example"); e16.zoom = 2.04
+        st16.update(e16)
+        assert(st16.sites[0].name == "새 이름" && st16.sites[0].url.host == "new.example" && st16.sites[0].zoom == 2.0)
+        // 초기화는 기본 목록 파일의 % 없는 줄에 지금의 기본 확대%를 쓴다
+        let dyn = SiteStore(defaults: fresh().0, backup: .none, defaultPages: { parseDefaultPages("https://a.com\nhttps://b.com,b,90", defaultZoom: $0) })
+        assert(dyn.sites.map(\.zoom) == [1.2, 0.9])
+        dyn.defaultZoom = 1.4
+        dyn.reset()
+        assert(dyn.sites.map(\.zoom) == [1.4, 0.9])
+        if case .success(let t) = dyn.exportCSV() { assert(t.contains("https://a.com,,140")) } else { fatalError() }
 
         // JSON 왕복
         let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(pages))

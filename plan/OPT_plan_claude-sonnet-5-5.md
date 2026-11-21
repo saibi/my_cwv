@@ -40,7 +40,7 @@ CSV 복원/기본 목록 : % 칸이 있으면 그 값, 없으면 기본 확대%
 
 ## 5. 구현 구조
 - 수정: `Site.swift`, `SiteStore.swift`, `SiteListView.swift`(메뉴, 편집 시트, 편집 모드 탭), `test_site.swift`, `cwv/README.md`(CSV 형식, 옵션), `cwv/default_page.csv.example`(3칸 예시)
-- 신규: `CWV/SettingsView.swift` (작은 시트). 새 의존성 없음.
+- 신규: ~~`CWV/SettingsView.swift`~~ [변경] `SiteListView.swift` 안에 둠 (pbxproj에 개인 Team ID 변경이 섞여 있어 새 파일 등록을 피함). 새 의존성 없음.
 - 자체 검증 항목: 3칸/2칸/1칸 해석, name 쉼표, 범위 밖 %, 내보내기-가져오기 왕복(타이틀 반영), `defaultZoom` 기본 120%와 저장 유지, 새 사이트가 기본 확대%를 받는지.
 
 ## 6. 결정 사항

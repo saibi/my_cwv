@@ -18,17 +18,22 @@ private struct LegacyUserData: Codable {
 }
 
 /// default_page.csv(번들)를 읽는다. 없거나 유효한 줄이 없으면 Google 하나.
-func bundledDefaultPages() -> [Site] {
+func bundledDefaultPages(defaultZoom: Double = initialDefaultZoom) -> [Site] {
     let text = Bundle.main.url(forResource: "default_page", withExtension: "csv")
         .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
-    let sites = parseDefaultPages(text)
+    let sites = parseDefaultPages(text, defaultZoom: defaultZoom)
     return sites.isEmpty ? fallbackSites() : sites
 }
 
 final class SiteStore: ObservableObject {
     private let defaults: UserDefaults
     private let backup: KeyValueBackup
-    private let defaultPages: [Site]
+    /// 기본 목록. 확대%가 없는 줄에 쓸 기본 확대%를 받아 만든다 (초기화할 때마다 지금 옵션 값으로).
+    private let defaultPages: (Double) -> [Site]
+    /// 옵션: 새 사이트(와 확대%가 없는 CSV 줄)의 확대%. 목록과 따로 UserDefaults에만 저장한다.
+    @Published var defaultZoom: Double {
+        didSet { defaults.set(defaultZoom, forKey: "defaultZoom") }
+    }
     /// 목록 하나. 첫 실행 때만 기본 목록으로 만들고, 그 뒤로는 앱이 건드리지 않는다.
     @Published var sites: [Site] { didSet { save() } }
     /// 사이트 id -> 첫 페이지에서 받은 타이틀 (캐시. 앱을 다시 실행해도 유지, Keychain 백업은 안 함)
@@ -39,10 +44,17 @@ final class SiteStore: ObservableObject {
         didSet { defaults.set(lastSiteID?.uuidString, forKey: "lastSiteID") }
     }
 
-    init(defaults: UserDefaults = .standard, backup: KeyValueBackup = .none, defaultPages: [Site] = bundledDefaultPages()) {
+    convenience init(defaults: UserDefaults = .standard, backup: KeyValueBackup = .none, defaultPages: [Site]) {
+        self.init(defaults: defaults, backup: backup, defaultPages: { _ in defaultPages })
+    }
+
+    init(defaults: UserDefaults = .standard, backup: KeyValueBackup = .none,
+         defaultPages: @escaping (Double) -> [Site] = { bundledDefaultPages(defaultZoom: $0) }) {
         self.defaults = defaults
         self.backup = backup
         self.defaultPages = defaultPages
+        let dz = (defaults.object(forKey: "defaultZoom") as? Double).map(clampZoom) ?? initialDefaultZoom
+        defaultZoom = dz
         pageTitles = defaults.dictionary(forKey: "pageTitles") as? [String: String] ?? [:]
         let decoder = JSONDecoder()
         func list(_ d: Data?) -> [Site]? { d.flatMap { try? decoder.decode(SiteList.self, from: $0) }?.sites }
@@ -55,11 +67,11 @@ final class SiteStore: ObservableObject {
             sites = saved
         } else if let u = legacy(defaults.data(forKey: "userData")) ?? legacy(kc) {
             // 기본/사용자 분리 형식: 화면에 보이던 순서(기본 항목 다음 사용자 사이트)로 이어 붙인다
-            sites = defaultPages.map { var s = $0; s.zoom = u.defaultZooms[s.id.uuidString] ?? 1.0; return s } + u.userSites.map(clean)
+            sites = defaultPages(dz).map { var s = $0; s.zoom = u.defaultZooms[s.id.uuidString] ?? 1.0; return s } + u.userSites.map(clean)
         } else if let old = defaults.data(forKey: "sites").flatMap({ try? decoder.decode([Site].self, from: $0) }) {
             sites = old  // 가장 오래된 형식은 그대로 옮긴다 (이름도 바꾸지 않는다)
         } else {
-            sites = defaultPages
+            sites = defaultPages(dz)
         }
         lastSiteID = defaults.string(forKey: "lastSiteID").flatMap(UUID.init)
         save()  // 복원/마이그레이션/최초 생성 결과를 두 저장소에 맞춘다
@@ -79,8 +91,9 @@ final class SiteStore: ObservableObject {
         pageTitles[id.uuidString] = t
     }
 
-    func add(name: String, url: URL) {
-        sites.append(Site(name: name, url: url))
+    /// zoom을 안 주면 옵션의 기본 확대%.
+    func add(name: String, url: URL, zoom: Double? = nil) {
+        sites.append(Site(name: name, url: url, zoom: clampZoom(zoom ?? defaultZoom)))
     }
 
     func update(_ site: Site) {
@@ -89,6 +102,8 @@ final class SiteStore: ObservableObject {
             WebCache.drop(site.id)
             pageTitles[site.id.uuidString] = nil  // 다른 사이트가 되었으니 이전 사이트의 제목은 버린다
         }
+        var site = site
+        site.zoom = clampZoom(site.zoom)
         sites[i] = site
     }
 
@@ -111,6 +126,9 @@ final class SiteStore: ObservableObject {
         sites = new
     }
 
-    /// 앱에 들어 있는 기본 목록으로 되돌린다 (글자 크기는 100%).
-    func reset() { replace(with: defaultPages) }
+    /// 앱에 들어 있는 기본 목록으로 되돌린다 (확대%는 파일에 적힌 값, 없으면 지금의 기본 확대%).
+    func reset() { replace(with: defaultPages(defaultZoom)) }
+
+    /// CSV 백업 내용. 이름이 비어 있는 사이트는 저장된 페이지 타이틀을 이름으로 적는다.
+    func exportCSV() -> Result<String, CSVImportError> { exportCSVChecked(sites, titles: pageTitles) }
 }

@@ -15,26 +15,23 @@ struct SiteListView: View {
     @State private var importing = false
     @State private var message: String?
     @State private var exportText = ""
+    @State private var showSettings = false
 
-    private func row(_ site: Site) -> some View {
-        Button { onOpen(site) } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(store.title(for: site)).font(.headline)
-                Text(site.url.absoluteString).font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .foregroundStyle(.primary)
+    private func delete(_ site: Site) {
+        if let i = store.sites.firstIndex(of: site) { store.remove(at: [i]) }
     }
 
     var body: some View {
         NavigationStack {
             List {
                 ForEach(store.sites) { site in
-                    row(site)
+                    SiteRow(site: site, onOpen: onOpen, onEdit: { editing = EditTarget(existing: site) })
+                        .contextMenu {
+                            Button("편집", systemImage: "pencil") { editing = EditTarget(existing: site) }
+                            Button("삭제", systemImage: "trash", role: .destructive) { delete(site) }
+                        }
                         .swipeActions(edge: .trailing) {
-                            Button("삭제", role: .destructive) {
-                                if let i = store.sites.firstIndex(of: site) { store.remove(at: [i]) }
-                            }
+                            Button("삭제", role: .destructive) { delete(site) }
                             Button("편집") { editing = EditTarget(existing: site) }.tint(.blue)
                         }
                 }
@@ -47,6 +44,8 @@ struct SiteListView: View {
                 ToolbarItem(placement: .topBarLeading) { EditButton() }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Menu {
+                        Button("옵션", systemImage: "gearshape") { showSettings = true }
+                        Divider()
                         Button("CSV로 백업 (파일 앱에 저장)") { startExport() }
                         Button("CSV에서 복원 (파일 앱에서 선택)") { importing = true }
                         Divider()
@@ -56,6 +55,7 @@ struct SiteListView: View {
                 }
             }
             .sheet(item: $editing) { SiteEditView(existing: $0.existing) }
+            .sheet(isPresented: $showSettings) { SettingsView() }
             .fileExporter(isPresented: $exporting, document: CSVDocument(text: exportText),
                           contentType: .commaSeparatedText, defaultFilename: "cwv_sites_\(Self.today)") { result in
                 switch result {
@@ -70,14 +70,14 @@ struct SiteListView: View {
                 Button("초기화", role: .destructive) { store.reset() }
                 Button("취소", role: .cancel) {}
             } message: {
-                Text("현재 목록이 사라지고 앱에 들어 있는 기본 목록으로 바뀝니다. 글자 크기도 100%로 돌아갑니다.")
+                Text("현재 목록이 사라지고 앱에 들어 있는 기본 목록으로 바뀝니다. 확대%는 기본 목록 파일에 적힌 값(없으면 기본 확대% \(Int((store.defaultZoom * 100).rounded()))%)이 됩니다.")
             }
             .confirmationDialog("파일 내용으로 교체", isPresented: Binding(get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } }),
                                 titleVisibility: .visible, presenting: pendingImport) { imp in
                 Button("교체", role: .destructive) { store.replace(with: imp.sites) }
                 Button("취소", role: .cancel) {}
             } message: { imp in
-                Text("현재 목록 \(store.sites.count)개가 파일의 \(imp.sites.count)개로 바뀝니다." + (imp.skipped > 0 ? " (잘못된 주소 또는 중복 \(imp.skipped)줄은 건너뜀)" : "") + " 글자 크기는 100%가 됩니다.")
+                Text("현재 목록 \(store.sites.count)개가 파일의 \(imp.sites.count)개로 바뀝니다." + (imp.skipped > 0 ? " (잘못된 주소 또는 중복 \(imp.skipped)줄은 건너뜀)" : "") + " 확대%는 파일에 적힌 값(없으면 기본 확대% \(Int((store.defaultZoom * 100).rounded()))%)이 됩니다.")
             }
             .alert("알림", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
                 Button("확인") {}
@@ -96,7 +96,7 @@ struct SiteListView: View {
 
     /// 복원할 수 있는 크기일 때만 파일 저장 창을 연다.
     private func startExport() {
-        switch exportCSVChecked(store.sites) {
+        switch store.exportCSV() {
         case .success(let text): exportText = text; exporting = true
         case .failure(let e): message = describe(e, backup: true)
         }
@@ -118,9 +118,51 @@ struct SiteListView: View {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let data = readLimited(url) else { message = "파일을 읽지 못했습니다."; return }
-        switch importCSV(data) {
+        switch importCSV(data, defaultZoom: store.defaultZoom) {
         case .success(let imp): pendingImport = imp
         case .failure(let e): message = describe(e, backup: false)
+        }
+    }
+}
+
+/// 목록의 한 행. 편집 모드에서 탭하면 열기 대신 편집 (편집 모드는 List 안쪽 뷰에서만 읽을 수 있다).
+private struct SiteRow: View {
+    @EnvironmentObject var store: SiteStore
+    @Environment(\.editMode) private var editMode
+    let site: Site
+    let onOpen: (Site) -> Void
+    let onEdit: () -> Void
+
+    var body: some View {
+        Button { editMode?.wrappedValue.isEditing == true ? onEdit() : onOpen(site) } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(store.title(for: site)).font(.headline)
+                Text(site.url.absoluteString).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .foregroundStyle(.primary)
+    }
+}
+
+private func zoomStepper(_ title: String, _ zoom: Binding<Double>) -> some View {
+    Stepper("\(title) \(Int((zoom.wrappedValue * 100).rounded()))%", value: Binding(get: { zoom.wrappedValue }, set: { zoom.wrappedValue = clampZoom($0) }),
+            in: zoomRange, step: 0.1)
+}
+
+struct SettingsView: View {
+    @EnvironmentObject var store: SiteStore
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(footer: Text("새로 추가하는 사이트와, 확대%가 없는 CSV 줄에 적용됩니다. 이미 있는 사이트는 바뀌지 않습니다.")) {
+                    zoomStepper("기본 확대", $store.defaultZoom)
+                }
+            }
+            .navigationTitle("옵션")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { dismiss() } } }
         }
     }
 }
@@ -131,6 +173,7 @@ struct SiteEditView: View {
     let existing: Site?
     @State private var name = ""
     @State private var urlText = ""
+    @State private var zoom = initialDefaultZoom
     @State private var error: String?
 
     var body: some View {
@@ -141,6 +184,7 @@ struct SiteEditView: View {
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                zoomStepper("확대", $zoom)
                 if let error { Text(error).foregroundStyle(.red).font(.caption) }
             }
             .navigationTitle(existing == nil ? "사이트 추가" : "사이트 편집")
@@ -152,6 +196,7 @@ struct SiteEditView: View {
             .onAppear {
                 name = existing?.name ?? ""
                 urlText = existing?.url.absoluteString ?? ""
+                zoom = existing?.zoom ?? store.defaultZoom
             }
         }
     }
@@ -166,9 +211,10 @@ struct SiteEditView: View {
         if var s = existing {
             s.name = finalName
             s.url = url
+            s.zoom = zoom
             store.update(s)
         } else {
-            store.add(name: finalName, url: url)
+            store.add(name: finalName, url: url, zoom: zoom)
         }
         dismiss()
     }
