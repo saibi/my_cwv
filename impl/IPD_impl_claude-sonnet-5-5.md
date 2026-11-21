@@ -1,7 +1,7 @@
 # [IPD] 구현 노트
 
 - 계획: plan/IPD_plan_claude-sonnet-5-5.md
-- 구현 커밋: (커밋 후 기재)
+- 구현 커밋: 5f0caef
 
 ## 아키텍처
 | 파일 | 역할 |
