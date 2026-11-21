@@ -25,6 +25,7 @@ cp cwv/default_page.csv.example cwv/CWV/default_page.csv   # 견본을 복사해
 
 ## 개발
 - 앱 아이콘 재생성: `swiftc -parse-as-library cwv/CWV/AppGlyph.swift cwv/make_icon.swift -o build/make_icon && build/make_icon out.png && cp out.png cwv/CWV/Assets.xcassets/AppIcon.appiconset/icon.png` (버튼과 같은 `AppGlyph`로 그림)
+- 버전: `cwv/Version.xcconfig`의 `MARKETING_VERSION` 한 줄만 고친다 (올리는 규칙은 `AGENTS.md` "버전 관리"). 목록 화면 제목 옆의 `v0.1.0`을 탭하면 빌드 시각이 보인다 (빌드 때마다 `BuildTime.txt`로 갱신).
 - 자체 검증: `swiftc -parse-as-library cwv/CWV/Site.swift cwv/CWV/SiteStore.swift cwv/test_site.swift -o build/test_site && build/test_site`
 - 실기기 확인: Xcode에서 `cwv/CWV.xcodeproj`를 열고 Signing에 본인 Apple ID 팀을 지정한 뒤 Run.
 

@@ -40,6 +40,8 @@ struct SiteListView: View {
     var body: some View {
         NavigationStack {
             List {
+              // 제목 줄을 직접 그려 오른쪽에 버전을 붙인다 (시스템 큰 제목 옆에는 다른 뷰를 놓을 수 없다, VER-Q1).
+              Section {
                 ForEach(store.sites) { site in
                     SiteRow(site: site, onOpen: onOpen, onEdit: { editing = EditTarget(existing: site) })
                         .listRowBackground(site.id == selectedID ? Color.accentColor.opacity(0.18) : nil)
@@ -54,12 +56,13 @@ struct SiteListView: View {
                 }
                 .onMove { store.sites.move(fromOffsets: $0, toOffset: $1) }
                 .onDelete { store.remove(at: $0) }
+              } header: { TitleHeader() }
             }
             .frame(maxWidth: 700)  // iPad 등 넓은 화면에서 목록이 끝까지 늘어나지 않게 가운데 정렬
             .frame(maxWidth: .infinity)
             .background(Color(.systemGroupedBackground))
             .overlay { if store.sites.isEmpty { Text("오른쪽 위 +로 추가하거나 ... 메뉴에서 기본값으로 초기화하세요").foregroundStyle(.secondary).padding() } }
-            .navigationTitle("커뮤니티")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { EditButton() }
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -148,6 +151,42 @@ struct SiteListView: View {
         switch importCSV(data, defaultZoom: store.defaultZoom, fileName: url.lastPathComponent) {
         case .success(let imp): pendingImport = imp
         case .failure(let e): message = describe(e, backup: false)
+        }
+    }
+}
+
+/// 목록 맨 위 제목 줄: "커뮤니티"(큰 제목과 같은 크기)와 오른쪽의 작은 버전.
+private struct TitleHeader: View {
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("커뮤니티").font(.largeTitle.bold()).foregroundStyle(Color(.label))  // 섹션 헤더의 기본 회색 스타일을 덮는다
+            VersionLabel()
+            Spacer()
+        }
+        .textCase(nil)
+        .padding(.top, 4)
+    }
+}
+
+/// `v0.1.0`. 탭하면 빌드 시각을 더 작은 글씨로 말풍선에 보인다 (iOS에는 호버 툴팁이 없다, VER-Q5).
+/// 버전은 Version.xcconfig -> Info.plist, 빌드 시각은 빌드 단계가 번들에 쓰는 BuildTime.txt. 못 읽으면 그 부분은 보이지 않는다.
+private struct VersionLabel: View {
+    @State private var showBuild = false
+    private let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+    private let built = Bundle.main.url(forResource: "BuildTime", withExtension: "txt")
+        .flatMap { try? String(contentsOf: $0, encoding: .utf8) }?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    var body: some View {
+        if let version {
+            let label = Text("v\(version)").font(.caption).foregroundStyle(.secondary)
+            if let built, !built.isEmpty {
+                Button { showBuild = true } label: { label }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showBuild) {
+                        Text("빌드 \(built)").font(.system(size: 10)).foregroundStyle(.secondary).padding(8)
+                            .presentationCompactAdaptation(.popover)
+                    }
+            } else { label }
         }
     }
 }
