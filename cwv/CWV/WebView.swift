@@ -74,12 +74,13 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate, UIGesture
         web.evaluateJavaScript(js)
     }
 
-    /// 데스크톱/모바일 전환. UA와 콘텐츠 모드(decidePolicyFor)를 바꾸고 지금 페이지를 새 모드로 다시 불러온다.
+    /// 데스크톱/모바일 전환. UA와 콘텐츠 모드(decidePolicyFor)를 바꾸고 지금 주소를 새 모드로 GET으로 다시 불러온다.
+    /// reload()는 마지막 요청을 재사용해서 POST 결과 화면이면 폼이 다시 전송되고(IPD-R1), 첫 접속이 실패한 상태면 재요청이 없다(IPD-R2).
     func apply(desktop new: Bool) {
         guard new != desktop else { return }
         desktop = new
         web.customUserAgent = customUserAgent(desktop: new)
-        web.reload()
+        web.load(URLRequest(url: web.url ?? base))
     }
 
     func webView(_ w: WKWebView, didFinish navigation: WKNavigation!) { refresh.endRefreshing() }

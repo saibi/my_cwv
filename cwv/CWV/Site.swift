@@ -43,9 +43,7 @@ func backupFileName(date: String, device: CSVDevice) -> String {
 /// 파일 이름 끝에서 기기 표시를 읽는다 (보조 수단: 파일 이름은 바뀔 수 있다).
 func csvDevice(fromFileName name: String) -> CSVDevice? {
     let base = (name as NSString).deletingPathExtension.lowercased()
-    if base.hasSuffix("-ipad") { return .ipad }
-    if base.hasSuffix("-iphone") { return .iphone }
-    return nil
+    return base.hasSuffix("-ipad") ? .ipad : nil  // iPhone 백업은 접미사가 없다 (IPD-Q7)
 }
 
 /// 첫 데이터 줄 앞의 주석에서 `# device: ipad|iphone`을 읽는다. 다른 값은 무시한다 (외부 파일).
@@ -55,13 +53,20 @@ func csvDevice(_ text: String) -> CSVDevice? {
         if line.isEmpty { continue }
         guard line.hasPrefix("#") else { return nil }
         let t = line.dropFirst().trimmingCharacters(in: .whitespaces).lowercased()
-        if t.hasPrefix("device:") { return CSVDevice(rawValue: t.dropFirst("device:".count).trimmingCharacters(in: .whitespaces)) }
+        if t.hasPrefix("device:"), let d = CSVDevice(rawValue: t.dropFirst("device:".count).trimmingCharacters(in: .whitespaces)) { return d }  // 알 수 없는 값은 건너뛰고 다음 줄을 본다
     }
     return nil
 }
 
-/// 데스크톱 설정을 뺀 목록 (다른 기기 백업을 복원할 때의 선택지).
-func withoutDesktop(_ sites: [Site]) -> [Site] { sites.map { var s = $0; s.desktop = false; return s } }
+/// 데스크톱 설정을 뺀 목록 (다른 기기 백업을 복원할 때의 선택지). 뺀 결과 주소/이름/확대%가 같아진 항목은 첫 항목만 남긴다 (IPD-R3:
+/// 남겨 두면 다음 백업/복원에서 합쳐져 항목이 줄어든다).
+func withoutDesktop(_ sites: [Site]) -> [Site] {
+    var seen = Set<String>()
+    return sites.compactMap { site in
+        var s = site; s.desktop = false
+        return seen.insert(s.url.absoluteString + "\u{0}" + s.name + "\u{0}" + String(s.zoom)).inserted ? s : nil
+    }
+}
 
 extension Site {
     /// 목록에 보이는 이름: 직접 정한 이름(CSV 제목 포함) > 저장해 둔 페이지 타이틀 > 도메인.

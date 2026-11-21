@@ -377,11 +377,15 @@ struct TestSite {
         assert(!v2i.sites[0].desktop && v2i.sites[0].zoom == 1.2 && v2i.device == nil)
         assert(importCSV(Data(exportCSV(lay).utf8)).map { $0.device } == .success(nil))  // 기기를 모르면 헤더 없음
         assert(importCSV(Data(exportCSV(lay).utf8), fileName: "cwv_sites_2026-11-21-ipad.csv").map { $0.device } == .success(.ipad))  // 파일 이름 보조
-        assert(importCSV(Data(v3.utf8), fileName: "cwv_sites-iphone.csv").map { $0.device } == .success(.ipad))  // 헤더가 파일 이름보다 우선
+        assert(importCSV(Data(exportCSV(lay, device: .iphone).utf8), fileName: "cwv_sites-ipad.csv").map { $0.device } == .success(.iphone))  // 헤더가 파일 이름보다 우선
         assert(csvDevice("# v3\n# device: IPAD \nhttps://a.com") == .ipad && csvDevice("# device: tv\nhttps://a.com") == nil && csvDevice("https://a.com\n# device: ipad") == nil)
+        assert(csvDevice("# device: tv\n# device: ipad\nhttps://a.com") == .ipad)  // 잘못된 값이 뒤의 유효한 헤더를 가리지 않는다 (IPD-R5)
         assert(backupFileName(date: "2026-11-21", device: .ipad) == "cwv_sites_2026-11-21-ipad" && backupFileName(date: "2026-11-21", device: .iphone) == "cwv_sites_2026-11-21")
-        assert(csvDevice(fromFileName: "a-ipad.csv") == .ipad && csvDevice(fromFileName: "a.csv") == nil && csvDevice(fromFileName: "ipad.csv") == nil)
+        assert(csvDevice(fromFileName: "a-ipad.csv") == .ipad && csvDevice(fromFileName: "a-iphone.csv") == nil && csvDevice(fromFileName: "a.csv") == nil && csvDevice(fromFileName: "ipad.csv") == nil)
         assert(withoutDesktop(lay).allSatisfy { !$0.desktop } && withoutDesktop(lay).map(\.zoom) == [1.2, 1.0])
+        // 데스크톱 설정을 빼면 같아지는 항목은 합친다 (IPD-R3)
+        let pair = [Site(name: "G", url: url("https://g.com"), zoom: 1.2, desktop: false), Site(name: "G", url: url("https://g.com"), zoom: 1.2, desktop: true), Site(name: "G", url: url("https://g.com"), zoom: 1.5, desktop: true)]
+        assert(withoutDesktop(pair).map(\.zoom) == [1.2, 1.5] && withoutDesktop(pair).allSatisfy { !$0.desktop })
         // 주소/이름/확대%가 같아도 레이아웃이 다르면 둘 다 남는다
         guard case .success(let lay2) = importCSV(Data("# v3\nhttps://g.com,\"G\",120,m\nhttps://g.com,\"G\",120,d\nhttps://g.com,\"G\",120,d\n".utf8)) else { fatalError() }
         assert(lay2.sites.map(\.desktop) == [false, true] && lay2.skipped == 1)

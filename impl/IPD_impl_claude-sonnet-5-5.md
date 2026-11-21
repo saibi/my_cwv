@@ -9,7 +9,7 @@
 | `project.pbxproj` | `TARGETED_DEVICE_FAMILY = "1,2"`, iPad 방향 4개 (별도 커밋, Team ID 제외) |
 | `Site.swift` | `Site.desktop`(하위 호환 디코딩), `customUserAgent(desktop:)`, `CSVDevice`, `backupFileName`, `csvDevice(...)`(헤더/파일 이름), `withoutDesktop`, CSV v3 (4번째 칸 m/d, `# device:` 헤더) |
 | `SiteStore.swift` | `add(desktop:)`, `setDesktop`, `exportCSV(device:)` |
-| `WebView.swift` | `SiteWebView(desktop:)`: 생성 때 `customUserAgent`, `apply(desktop:)`가 바뀌면 UA 교체 후 reload, `decidePolicyFor(preferences:)`에서 `preferredContentMode` 지정 |
+| `WebView.swift` | `SiteWebView(desktop:)`: 생성 때 `customUserAgent`, `apply(desktop:)`가 바뀌면 UA 교체 후 현재 주소를 GET으로 다시 불러옴 (reload는 POST 재전송 위험, 리뷰 IPD-R1), `decidePolicyFor(preferences:)`에서 `preferredContentMode` 지정 |
 | `BrowserView.swift` | 웹 메뉴의 "데스크톱/모바일 사이트로 보기" |
 | `SiteListView.swift` | 편집 시트 토글, 목록 폭 700pt 제한, 백업 파일 이름/헤더, 다른 기기 백업 복원 선택지 |
 
@@ -25,6 +25,7 @@
 ## 계획 대비 변경
 | 항목 | 계획 | 최종 구현 | 상황과 근본 이유 |
 | :--- | :--- | :--- | :--- |
+| 파일 이름 보조 판정 | `-ipad` | `-ipad`만 (리뷰 후) | 첫 구현이 `-iphone`도 인정했으나 계획 밖이라 제거 (IPD-R6) |
 | 필드 이름 | `padDesktop` -> `desktop` | `desktop` | IPD-Q4를 "모든 기기"로 확정하면서 계획에서 이미 바꿨고, 구현도 따름 |
 | 복원 선택지 표시 조건 | 기기가 다르면 | 기기가 다르고 데스크톱 사이트가 하나라도 있을 때 | 데스크톱 설정이 없으면 고를 내용이 없어서 단일 확인창을 유지 |
 
