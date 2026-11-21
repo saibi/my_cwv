@@ -451,6 +451,7 @@ struct TestSite {
         assert(fa(179, 0) == .forward && fa(180, 0) == .move && fa(130, 130) == .move && fa(100, 100) == .forward)  // 모서리 이동 경계 (거리 기준)
         assert(fa(-180, 0) == .move && fa(0, -200) == .move)
         assert(joystickDistance(isPad: true) == 52 && joystickDistance(isPad: false) == 60)
+        assert(fabIsTap(maxDisplacement: 0) && fabIsTap(maxDisplacement: 7.9) && !fabIsTap(maxDisplacement: 8) && !fabIsTap(maxDisplacement: 200))  // 탭/끌기 구분 (끌었다 돌아온 경우는 최대 거리로 판단)
         // JOY-R1: 버튼 중심에서 어느 끝까지든 조이스틱 거리 이상 남아야 끝쪽 방향 동작이 가능하다
         for isPad in [false, true] {
             let j = joystickDistance(isPad: isPad), m = fabMargin(joystick: j, fab: 44)

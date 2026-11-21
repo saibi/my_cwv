@@ -17,6 +17,9 @@ struct BrowserView: View {
     @AppStorage("fabCorner") private var corner = FabCorner.bottomTrailing
     // 끄는 중의 이동량. @GestureState라 정상 종료뿐 아니라 시스템이 제스처를 취소해도 자동으로 0으로 돌아온다 (JOY-R2).
     @GestureState(resetTransaction: Transaction(animation: .easeOut(duration: 0.2))) private var drag = CGSize.zero
+    @GestureState private var active = false  // 터치 중 (끝나거나 취소되면 false)
+    @State private var maxDisp: CGFloat = 0  // 이번 터치에서 움직인 최대 거리 (탭/끌기 구분)
+    @State private var showMenu = false
     @State private var toast: String?  // 놓은 뒤 결과 (1.2초)
     @State private var toastTask: DispatchWorkItem?
     private let fab: CGFloat = 44
@@ -36,14 +39,22 @@ struct BrowserView: View {
                     Circle().strokeBorder(Color.accentColor, lineWidth: 2).frame(width: fab, height: fab)
                         .position(center(target(drag, in: g.size), in: g.size)).allowsHitTesting(false)
                 }
-                menu.padding(margin).offset(drag)
-                    .simultaneousGesture(DragGesture(minimumDistance: 8)
+                fab_.padding(margin).offset(maxDisp >= CGFloat(fabTapSlop) ? drag : .zero)
+                    // 시스템 Menu는 손가락을 뗄 때 스스로 "탭"으로 판단해 끌었다 놓아도 메뉴가 열렸다. 그래서 Menu를 쓰지 않고
+                    // 이 제스처 하나가 탭(메뉴 열기)과 끌기(조이스틱)를 모두 판단한다.
+                    .gesture(DragGesture(minimumDistance: 0)
                         .updating($drag) { v, state, _ in state = v.translation }
-                        .onChanged { _ in
+                        .updating($active) { _, state, _ in state = true }
+                        .onChanged { v in
+                            maxDisp = max(maxDisp, hypot(v.translation.width, v.translation.height))
                             // 새 조작이 시작되면 이전 결과 말풍선은 지운다 (JOY-R4)
-                            if toast != nil { toastTask?.cancel(); toast = nil }
+                            if !fabIsTap(maxDisplacement: maxDisp), toast != nil { toastTask?.cancel(); toast = nil }
                         }
                         .onEnded { v in
+                            // 움직인 적이 없으면 탭: 메뉴를 연다. 한 번이라도 움직였으면(원래 자리로 돌아와도) 메뉴는 열지 않는다.
+                            let tap = fabIsTap(maxDisplacement: maxDisp)
+                            maxDisp = 0
+                            if tap { showMenu = true; return }
                             // 손을 뗀 위치(실제 이동량)로만 판정한다. 튕기는 속도는 쓰지 않는다.
                             let a = action(v.translation)
                             let t = target(v.translation, in: g.size)
@@ -62,6 +73,8 @@ struct BrowserView: View {
             // 말풍선은 손가락/버튼에 가리지 않게 웹 영역의 가로 중앙, 버튼의 반대쪽(위/아래) 끝에 둔다 (화면 밖으로 나가지 않음, JOY-R3).
             .overlay(alignment: buttonInLowerHalf(in: g.size) ? .top : .bottom) { bubble(live).padding(.vertical, 24) }
             .onChange(of: live) { _, new in if new != .none { UISelectionFeedbackGenerator().selectionChanged() } }
+            // 시스템이 제스처를 취소(전화 수신 등)하면 onEnded가 불리지 않으므로 터치가 끝난 뒤 움직임 기록을 지운다.
+            .onChange(of: active) { _, now in if !now { DispatchQueue.main.async { maxDisp = 0 } } }
         }
         .sheet(item: $external) { SafariView(url: $0.url).ignoresSafeArea() }
     }
@@ -140,35 +153,57 @@ struct BrowserView: View {
         return CGPoint(x: leading ? o : size.width - o, y: top ? o : size.height - o)
     }
 
-    private var menu: some View {
-        Menu {
-            Button("A+  크게") { store.setZoom(site.id, site.zoom + 0.1) }
-            Button("A-  작게") { store.setZoom(site.id, site.zoom - 0.1) }
-            Button("100%로") { store.setZoom(site.id, 1.0) }
-            Text("현재 \(Int((site.zoom * 100).rounded()))%")
-            Button("뒤로") { navigate(forward: false) }  // 조이스틱 조작이 어렵거나 VoiceOver일 때의 대안 (JOY-Q4)
-            Button("앞으로") { navigate(forward: true) }
-            Button(site.desktop ? "모바일 사이트로 보기" : "데스크톱 사이트로 보기") { store.setDesktop(site.id, !site.desktop) }
-            Button("Safari에서 열기") {
+    /// 플로팅 버튼 본체. 탭하면 메뉴(popover), 끌면 조이스틱 (제스처는 body에서 붙인다).
+    private var fab_: some View {
+        AppGlyph()
+            .foregroundStyle(.primary)
+            .padding(10)
+            .frame(width: fab, height: fab)
+            .background(.ultraThinMaterial, in: Circle())
+            .opacity(0.85)
+            .popover(isPresented: $showMenu) { menuContent.presentationCompactAdaptation(.popover) }
+            .accessibilityElement()
+            .accessibilityLabel("글자 크기 및 목록 메뉴")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { showMenu = true }
+    }
+
+    /// 탭하면 뜨는 메뉴. 시스템 Menu 대신 직접 그린다 (끌기와 구분하려고, 항목은 이전과 같다).
+    private var menuContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            menuItem("A+  크게") { store.setZoom(site.id, site.zoom + 0.1) }
+            menuItem("A-  작게") { store.setZoom(site.id, site.zoom - 0.1) }
+            menuItem("100%로") { store.setZoom(site.id, 1.0) }
+            Text("현재 \(Int((site.zoom * 100).rounded()))%").font(.footnote).foregroundStyle(.secondary)
+                .padding(.horizontal, 16).padding(.vertical, 6)
+            Divider()
+            menuItem("뒤로") { navigate(forward: false) }  // 조이스틱 조작이 어렵거나 VoiceOver일 때의 대안 (JOY-Q4)
+            menuItem("앞으로") { navigate(forward: true) }
+            Divider()
+            menuItem(site.desktop ? "모바일 사이트로 보기" : "데스크톱 사이트로 보기") { store.setDesktop(site.id, !site.desktop) }
+            menuItem("Safari에서 열기") {
                 UIApplication.shared.open(safariTarget(current: WebCache.view(for: site).web.url, fallback: site.url))
             }
-            Menu("버튼 위치") {
+            DisclosureGroup("버튼 위치") {
                 ForEach(FabCorner.allCases, id: \.self) { c in
-                    Button { withAnimation { corner = c } } label: {
-                        if c == corner { Label(c.title, systemImage: "checkmark") } else { Text(c.title) }
-                    }
+                    Button { showMenu = false; withAnimation { corner = c } } label: {
+                        HStack { Text(c.title); Spacer(); if c == corner { Image(systemName: "checkmark") } }
+                            .padding(.vertical, 8).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
                 }
             }
+            .padding(.horizontal, 16).padding(.vertical, 10)
             Divider()
-            Button(closeTitle, action: onClose)
-        } label: {
-            AppGlyph()
-                .foregroundStyle(.primary)
-                .padding(10)
-                .frame(width: fab, height: fab)
-                .background(.ultraThinMaterial, in: Circle())
-                .opacity(0.85)
+            menuItem(closeTitle) { onClose() }
         }
-        .accessibilityLabel("글자 크기 및 목록 메뉴")
+        .frame(width: 240)
+        .padding(.vertical, 6)
+    }
+
+    private func menuItem(_ title: String, _ action: @escaping () -> Void) -> some View {
+        Button { showMenu = false; action() } label: {
+            HStack { Text(title); Spacer() }.padding(.horizontal, 16).padding(.vertical, 11).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

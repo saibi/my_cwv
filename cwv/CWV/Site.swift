@@ -399,6 +399,11 @@ func opensInSafariSheet(_ url: URL, base: URL, linkActivated: Bool) -> Bool {
 /// 플로팅 버튼을 눌러 끌었다가 뗄 때의 동작 (JOY). 왼쪽=뒤로, 오른쪽=앞으로, 위=글자 크게, 아래=글자 작게, 멀리=모서리 이동.
 enum FabAction: Equatable { case none, back, forward, zoomIn, zoomOut, move }
 
+/// 플로팅 버튼 터치에서 이 거리(pt) 이상 움직인 적이 한 번이라도 있으면 탭이 아니라 끌기다.
+/// 끝 위치가 아니라 움직인 최대 거리로 판단해야 끌었다가 원래 자리로 돌아와 놓은 경우를 탭으로 오인하지 않는다.
+let fabTapSlop = 8.0
+func fabIsTap(maxDisplacement: Double) -> Bool { maxDisplacement < fabTapSlop }
+
 /// 약 1cm에 해당하는 pt. 기기 화면 밀도 기준 근사값 (iPhone 약 60pt, iPad 약 52pt).
 func joystickDistance(isPad: Bool) -> Double { isPad ? 52 : 60 }
 
