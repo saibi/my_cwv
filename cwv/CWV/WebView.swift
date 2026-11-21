@@ -8,6 +8,7 @@ import UIKit.UIGestureRecognizerSubclass
 /// 웹뷰의 그쪽 끝이 화면 끝이면 WebKit 기본 제스처가 처리하므로 실패한다 (이중 이동 방지).
 final class PaneEdgePan: UIPanGestureRecognizer {
     private(set) var startX = 0.0
+    private(set) var canBack = false, canForward = false  // 시작한 쪽이 허용하는 방향 (gestureRecognizerShouldBegin에서 사용)
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         super.touchesBegan(touches, with: event)
@@ -15,9 +16,9 @@ final class PaneEdgePan: UIPanGestureRecognizer {
         startX = t.location(in: web).x
         let frame = web.convert(web.bounds, to: nil)
         let screenW = web.window?.bounds.width ?? frame.maxX
-        let back = web.canGoBack && startX <= paneSwipeEdge && frame.minX > 1
-        let forward = web.canGoForward && startX >= web.bounds.width - paneSwipeEdge && screenW - frame.maxX > 1
-        if !(back || forward) { state = .failed }
+        canBack = web.canGoBack && startX <= paneSwipeEdge && frame.minX > 1
+        canForward = web.canGoForward && startX >= web.bounds.width - paneSwipeEdge && screenW - frame.maxX > 1
+        if !(canBack || canForward) { state = .failed }
     }
 }
 
@@ -33,6 +34,9 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate, UIGesture
 
     /// 데스크톱 사이트로 볼지 (사이트 설정). 바뀌면 apply(desktop:)가 UA를 바꾸고 다시 불러온다.
     private(set) var desktop: Bool
+    /// 분할 화면에서만 켠다 (그 밖에서는 WebKit 기본 제스처만 쓴다, SWB-R1). 가로 iPhone처럼 안전 영역 때문에 웹뷰가 창 끝에서 떨어져 있어도 켜지지 않게.
+    var paneSwipeEnabled = false { didSet { pane?.isEnabled = paneSwipeEnabled } }
+    private var pane: PaneEdgePan?
 
     init(base: URL, desktop: Bool) {
         self.base = base
@@ -56,7 +60,9 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate, UIGesture
         let pane = PaneEdgePan(target: self, action: #selector(panePan(_:)))
         pane.maximumNumberOfTouches = 1
         pane.delegate = self
+        pane.isEnabled = false
         web.addGestureRecognizer(pane)
+        self.pane = pane
         // 첫 페이지(웹 기록 없음)의 타이틀만 목록 이름 후보로 보고한다. 글 상세 제목이 사이트 이름이 되지 않게.
         titleObs = web.observe(\.title) { [weak self] _, _ in self?.reportTitle() }
         refresh.addTarget(self, action: #selector(reload), for: .valueChanged)
@@ -89,8 +95,8 @@ final class SiteWebView: NSObject, WKNavigationDelegate, WKUIDelegate, UIGesture
     }
 
     func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
-        // 가장자리 팬은 가로가 우세할 때만 시작한다 (세로면 스크롤에 양보)
-        if g is PaneEdgePan { let v = (g as! UIPanGestureRecognizer).velocity(in: web); return abs(v.x) > abs(v.y) }
+        // 가장자리 팬은 가로가 우세하고 방향이 맞을 때만 시작한다 (세로면 스크롤에, 틀린 방향이면 웹 콘텐츠에 양보)
+        if let p = g as? PaneEdgePan { let v = p.velocity(in: web); return paneSwipeStarts(canBack: p.canBack, canForward: p.canForward, vx: v.x, vy: v.y) }
         return !web.canGoBack
     }
 
@@ -232,6 +238,7 @@ struct WebView: UIViewRepresentable {
     let onExternal: (URL) -> Void
     let onBack: () -> Void
     let onTitle: (String) -> Void
+    var paneSwipe = false  // 분할 화면에서만 true
 
     // delegate는 WKWebView가 약하게만 잡으므로, 표시 중인 SiteWebView는 여기서 강하게 보유한다
     // (캐시가 메모리 경고로 비워져도 제어가 끊기지 않게).
@@ -250,6 +257,7 @@ struct WebView: UIViewRepresentable {
         v.onExternal = onExternal
         v.onBack = onBack
         v.onTitle = onTitle
+        v.paneSwipeEnabled = paneSwipe
         v.reportTitle()
         v.apply(zoom: site.zoom)
         v.apply(desktop: site.desktop)

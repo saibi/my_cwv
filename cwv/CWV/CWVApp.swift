@@ -76,7 +76,7 @@ private struct RootView: View {
     @ViewBuilder private var detail: some View {
         if let site = currentSite {
             BrowserView(site: site, closeTitle: hidden ? "목록 보이기" : "목록 숨기기", onClose: toggleHidden,
-                        onSwipe: { if hidden && side == .leading { toggleHidden() } })  // 목록이 보이는데 스와이프로 닫히면 실수 동작이다
+                        onSwipe: { if hidden && side == .leading { toggleHidden() } }, paneSwipe: true)  // 목록이 보이는데 스와이프로 닫히면 실수 동작이다
                 // 사이트가 바뀌거나 캐시의 웹뷰가 교체되면(주소 편집, 목록 초기화/복원) 웹뷰 보유자(Coordinator)도 새로 만든다.
                 .id(ObjectIdentifier(WebCache.view(for: site)))
         } else {

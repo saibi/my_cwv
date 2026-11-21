@@ -427,6 +427,7 @@ struct TestSite {
         assert(ps(10, minX: 0, w: 1194, dx: 120) == nil)  // 웹뷰가 화면 왼쪽 끝이면 WebKit 기본 제스처 (이중 이동 방지)
         assert(ps(10, dx: 30) == nil && ps(10, dx: 30, vx: 600) == .back)  // 이동량 또는 속도 기준
         assert(ps(10, dx: -120) == nil)  // 왼쪽 가장자리에서 왼쪽으로는 아무것도 아님
+        assert(ps(10, dx: 30, vx: -600) == nil && ps(850, minX: 0, dx: -30, vx: 600) == nil)  // 짧게 밀었다가 반대로 튕기면 취소 (SWB-R4/D1)
         assert(ps(10, dx: 100, dy: 200) == nil)  // 세로 우세는 스크롤
         // 앞으로: 웹 오른쪽 끝이 화면 끝이 아닐 때만 (목록이 오른쪽: 웹 x 0...862)
         assert(ps(850, minX: 0, dx: -120, vx: -300) == .forward && ps(838, minX: 0, dx: -120) == .forward)
@@ -434,6 +435,12 @@ struct TestSite {
         assert(ps(850, dx: -120) == nil)  // 웹 오른쪽 끝이 화면 끝(목록 왼쪽)이면 기본 제스처
         assert(ps(850, minX: 0, dx: 120) == nil && ps(850, minX: 0, dx: -30) == nil && ps(850, minX: 0, dx: -30, vx: -600) == .forward)
         assert(ps(850, minX: 0, dx: -100, dy: 200) == nil)
+
+        // SWB-R2: 방향이 맞을 때만 시작
+        assert(paneSwipeStarts(canBack: true, canForward: false, vx: 200, vy: 10) && !paneSwipeStarts(canBack: true, canForward: false, vx: -200, vy: 10))
+        assert(paneSwipeStarts(canBack: false, canForward: true, vx: -200, vy: 10) && !paneSwipeStarts(canBack: false, canForward: true, vx: 200, vy: 10))
+        assert(!paneSwipeStarts(canBack: true, canForward: false, vx: 50, vy: 200) && !paneSwipeStarts(canBack: false, canForward: false, vx: 200, vy: 0))
+        assert(paneSwipeStarts(canBack: true, canForward: true, vx: 200, vy: 0) && paneSwipeStarts(canBack: true, canForward: true, vx: -200, vy: 0))
 
         // JSON 왕복
         let back = try JSONDecoder().decode([Site].self, from: JSONEncoder().encode(pages))

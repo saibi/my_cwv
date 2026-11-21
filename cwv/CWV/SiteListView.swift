@@ -155,6 +155,9 @@ struct SiteListView: View {
     }
 }
 
+/// 빌드 시각 말풍선 배경: 진한 파랑 (AccentColor 에셋에는 값이 없어 시스템 파랑이 나오므로 직접 지정, 흰 글씨와 대비 약 9:1, 라이트/다크 같음).
+private let buildBadgeColor = Color(red: 0.05, green: 0.25, blue: 0.65)
+
 /// 목록 맨 위 제목 줄: "커뮤니티"(큰 제목과 같은 크기)와 오른쪽의 작은 버전.
 private struct TitleHeader: View {
     var body: some View {
@@ -185,7 +188,8 @@ private struct VersionLabel: View {
                     .popover(isPresented: $showBuild) {
                         Text("빌드 \(built)").font(.system(size: 10, weight: .medium)).foregroundStyle(.white).padding(8)
                             .presentationCompactAdaptation(.popover)
-                            .presentationBackground(Color.accentColor)  // 눌러야 보이는 요소라 배경과 확실히 구분되는 색 (SWB-Q1)
+                            .background(buildBadgeColor)
+                            .presentationBackground(buildBadgeColor)  // 눌러야 보이는 요소라 배경과 확실히 구분되는 색 (SWB-Q1)
                     }
             } else { label }
         }

@@ -167,6 +167,12 @@ func paneSwipe(startX: Double, viewWidth: Double, viewMinX: Double, screenWidth:
     return nil
 }
 
+/// 가장자리 팬을 시작할지: 가로가 우세하고, 시작한 쪽이 허용하는 방향(왼쪽 끝=오른쪽으로 뒤로, 오른쪽 끝=왼쪽으로 앞으로)일 때만.
+/// 방향이 틀린 드래그(예: 왼쪽 끝의 슬라이더를 왼쪽으로)는 웹 콘텐츠의 터치를 취소시키지 않도록 시작하지 않는다 (SWB-R2).
+func paneSwipeStarts(canBack: Bool, canForward: Bool, vx: Double, vy: Double) -> Bool {
+    abs(vx) > abs(vy) && ((canBack && vx > 0) || (canForward && vx < 0))
+}
+
 let zoomRange = 0.5...3.0
 
 func clampZoom(_ z: Double) -> Double {

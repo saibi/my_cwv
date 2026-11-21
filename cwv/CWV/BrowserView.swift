@@ -11,6 +11,7 @@ struct BrowserView: View {
     var closeTitle = "목록으로"  // 분할 화면에서는 "목록 숨기기"/"목록 보이기"
     let onClose: () -> Void
     var onSwipe: (() -> Void)?  // 첫 페이지 가장자리 스와이프 (없으면 onClose)
+    var paneSwipe = false  // 분할 화면: 웹 영역 가장자리 스와이프로 뒤로/앞으로 (SWB)
     @State private var external: ExternalLink?
 
     @AppStorage("fabCorner") private var corner = FabCorner.bottomTrailing
@@ -21,7 +22,7 @@ struct BrowserView: View {
         GeometryReader { g in
             ZStack(alignment: alignment) {
                 WebView(site: site, onExternal: { external = ExternalLink(url: $0) }, onBack: onSwipe ?? onClose,
-                        onTitle: { store.setPageTitle(site.id, $0) })
+                        onTitle: { store.setPageTitle(site.id, $0) }, paneSwipe: paneSwipe)
                 menu.padding(margin).offset(drag)
                     .simultaneousGesture(DragGesture(minimumDistance: 8)
                         .onChanged { drag = $0.translation }
